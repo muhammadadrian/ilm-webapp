@@ -7,8 +7,10 @@ import InsightCard from './components/InsightCard';
 import CategoryBar from './components/CategoryBar';
 import Login from './components/Login';
 import Onboarding from './components/Onboarding';
+import Ranking from './components/Ranking';
+import { useScreenTime } from './lib/screenTime';
 
-type View = 'today' | 'feed' | 'saved';
+type View = 'today' | 'feed' | 'saved' | 'ranking';
 
 export default function App() {
   const [view, setView] = useState<View>('feed');
@@ -20,6 +22,9 @@ export default function App() {
 
   const [loggedIn, setLoggedIn] = usePersistentFlag('ilm.loggedIn');
   const [onboarded, setOnboarded] = usePersistentFlag('ilm.onboarded');
+
+  // Track the current user's on-screen time only once the feed is reached.
+  const screenMs = useScreenTime(loggedIn && onboarded);
 
   const resetApp = () => {
     setOnboarded(false);
@@ -67,6 +72,7 @@ export default function App() {
                 ['today', 'Today'],
                 ['feed', 'Feed'],
                 ['saved', `Saved${saves.count ? ` (${saves.count})` : ''}`],
+                ['ranking', 'Ranking'],
               ] as Array<[View, string]>
             ).map(([key, label]) => (
               <button
@@ -122,6 +128,7 @@ export default function App() {
           <FeedView key={active} />
         )}
         {view === 'saved' && <SavedView />}
+        {view === 'ranking' && <Ranking youMs={screenMs} />}
       </main>
     </div>
   );
