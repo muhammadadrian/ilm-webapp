@@ -15,6 +15,7 @@ import Listen from './components/Listen';
 import Hadith from './components/Hadith';
 import Profile from './components/Profile';
 import GlobalSearch from './components/GlobalSearch';
+import TapToExplain from './components/TapToExplain';
 import { useScreenTime } from './lib/screenTime';
 import { usePoints } from './lib/points';
 
@@ -320,6 +321,24 @@ export default function App() {
       {openCard && (
         <CardDetail card={openCard} onClose={() => setOpenCard(null)} />
       )}
+
+      {/* ── Tap-to-explain: selection bubble + explanation/related panel ──
+          Mounted at the root so it works across the feed, saved, today, the
+          hadith section, and the card-detail overlay. Related items reuse the
+          same tag/keyword matching as the global search. */}
+      <TapToExplain
+        cards={SEED_CARDS}
+        onOpenCard={(card) => {
+          setSearchOpen(false);
+          setOpenCard(card);
+        }}
+        onOpenHadith={(n) => {
+          setSearchOpen(false);
+          setOpenCard(null);
+          setFocusHadith(n);
+          setView('hadith');
+        }}
+      />
     </div>
   );
 

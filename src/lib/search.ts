@@ -175,15 +175,17 @@ export const LIFE_ISSUES: LifeIssueDef[] = [
 ];
 
 // ── Haystacks (lower-cased once per item at match time) ──
+// Exported so the tap-to-explain related-items logic (lib/explain.ts) can reuse
+// the exact same field set + normalisation used by global search.
 
-function cardHaystack(c: Card): string {
+export function cardHaystack(c: Card): string {
   return [c.title, c.body, c.translation, c.transliteration, c.arabic, c.reference, c.attribution]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
 }
 
-function hadithHaystack(h: Hadith): string {
+export function hadithHaystack(h: Hadith): string {
   return [h.narrator, h.english, h.arabic, h.reference, h.book.name, h.chapter.name]
     .filter(Boolean)
     .join(' ')

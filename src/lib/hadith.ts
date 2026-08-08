@@ -98,6 +98,16 @@ export function loadCollection(): Promise<HadithCollection> {
   return inFlight;
 }
 
+/**
+ * Synchronous accessor for the already-loaded collection, or null if it has not
+ * been fetched yet. Lets callers (e.g. the tap-to-explain related-items panel)
+ * enrich with hadith instantly when the collection is warm, without forcing a
+ * fresh 2.6 MB fetch on a passage selected from the feed.
+ */
+export function getCachedCollection(): HadithCollection | null {
+  return cache;
+}
+
 /** Distinct books in collection order. */
 export interface BookGroup {
   number: number;

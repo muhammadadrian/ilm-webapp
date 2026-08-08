@@ -452,18 +452,25 @@ function HadithCard({
 
       {/* Body */}
       <div className="px-5 pb-3 pt-4">
-        <p className="arabic text-right text-2xl leading-loose text-emerald-900">
-          {hadith.arabic}
-        </p>
+        {/* Arabic + English marked explainable — highlighting either offers the
+            tap-to-explain bubble (see components/TapToExplain.tsx). */}
+        <div
+          data-explain-source="hadith"
+          data-explain-id={String(hadith.hadithNumber)}
+        >
+          <p className="arabic text-right text-2xl leading-loose text-emerald-900">
+            {hadith.arabic}
+          </p>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-ink/80">
-          {hadith.narrator && (
-            <span className="font-medium text-emerald-800">
-              {hadith.narrator}{' '}
-            </span>
-          )}
-          {hadith.english}
-        </p>
+          <p className="mt-4 text-[15px] leading-relaxed text-ink/80">
+            {hadith.narrator && (
+              <span className="font-medium text-emerald-800">
+                {hadith.narrator}{' '}
+              </span>
+            )}
+            {hadith.english}
+          </p>
+        </div>
 
         <p className="mt-4 text-xs font-medium leading-relaxed text-emerald-800/70">
           {hadith.reference} · {hadith.book.name} · {hadith.chapter.name}

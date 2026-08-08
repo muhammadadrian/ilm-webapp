@@ -101,8 +101,14 @@ export default function InsightCard({
           )}
         </div>
 
-        {/* Body */}
-        <div className="px-5 pb-3 pt-4">
+        {/* Body — marked explainable so highlighting any of the Arabic,
+            translation, or classical paragraph offers the tap-to-explain
+            bubble (see components/TapToExplain.tsx). */}
+        <div
+          className="px-5 pb-3 pt-4"
+          data-explain-source="card"
+          data-explain-id={card.id}
+        >
           <h2 className="text-xl font-bold leading-snug text-ink">{card.title}</h2>
 
           {card.arabic && (
