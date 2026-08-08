@@ -1,5 +1,7 @@
 import type { Card } from '../types';
 import { CATEGORY_LABEL, THEME_LABEL } from '../types';
+import ShareMenu from './ShareMenu';
+import { snippet } from '../lib/share';
 
 interface Props {
   card: Card;
@@ -123,6 +125,11 @@ export default function InsightCard({
             <span aria-hidden>{saved ? '🔖' : '📑'}</span>
             {saved ? 'Saved' : 'Save'}
           </button>
+          <ShareMenu
+            text={snippet(
+              `${card.title} — ${card.translation ?? card.body}`
+            )}
+          />
         </div>
       </div>
     </article>

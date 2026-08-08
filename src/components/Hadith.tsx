@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import ShareMenu from './ShareMenu';
+import { snippet } from '../lib/share';
 import {
   loadCollection,
   groupBooks,
@@ -404,6 +406,10 @@ function HadithCard({
             View on sunnah.com
             <span aria-hidden>↗</span>
           </a>
+          <ShareMenu
+            variant="inline"
+            text={snippet(`${hadith.reference} — ${hadith.english}`)}
+          />
         </div>
 
         {/* Grading is NOT authoritative — the upstream blanket "Sahih" is unverified. */}
