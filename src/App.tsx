@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { SEED_CARDS } from './data/seed';
-import type { Category } from './types';
+import type { Category, Theme } from './types';
+import { THEME_LABEL } from './types';
 import { usePersistentSet, usePersistentFlag } from './lib/storage';
 import { dailyPick, todayLabel } from './lib/daily';
 import InsightCard from './components/InsightCard';
 import CategoryBar from './components/CategoryBar';
+import ThemeBar from './components/ThemeBar';
 import Login from './components/Login';
 import Onboarding from './components/Onboarding';
 import Ranking from './components/Ranking';
@@ -16,6 +18,8 @@ type View = 'today' | 'feed' | 'saved' | 'ranking' | 'listen';
 export default function App() {
   const [view, setView] = useState<View>('feed');
   const [active, setActive] = useState<Category | 'all'>('all');
+  const [activeTheme, setActiveTheme] = useState<Theme | 'all'>('all');
+  const [query, setQuery] = useState('');
 
   const saves = usePersistentSet('ilm.saved');
   const likes = usePersistentSet('ilm.liked');
@@ -35,10 +39,38 @@ export default function App() {
 
   const pick = useMemo(() => dailyPick(SEED_CARDS), []);
 
+  // Free-text search across title / body / translation (case-insensitive).
+  const q = query.trim().toLowerCase();
+  const searchMatch = useMemo(() => {
+    if (!q) return () => true;
+    return (c: (typeof SEED_CARDS)[number]) =>
+      c.title.toLowerCase().includes(q) ||
+      c.body.toLowerCase().includes(q) ||
+      (c.translation?.toLowerCase().includes(q) ?? false);
+  }, [q]);
+
+  // Feed = content-type filter × topic-theme filter × search text.
   const feedCards = useMemo(() => {
-    if (active === 'all') return SEED_CARDS;
-    return SEED_CARDS.filter((c) => c.category === active);
-  }, [active]);
+    return SEED_CARDS.filter(
+      (c) =>
+        (active === 'all' || c.category === active) &&
+        (activeTheme === 'all' || c.theme === activeTheme) &&
+        searchMatch(c)
+    );
+  }, [active, activeTheme, searchMatch]);
+
+  // Per-theme counts for the current search + content-type selection, so the
+  // theme chips show how many cards each topic holds right now.
+  const themeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0 };
+    for (const c of SEED_CARDS) {
+      if (active !== 'all' && c.category !== active) continue;
+      if (!searchMatch(c)) continue;
+      counts.all += 1;
+      counts[c.theme] = (counts[c.theme] ?? 0) + 1;
+    }
+    return counts;
+  }, [active, searchMatch]);
 
   const savedCards = useMemo(
     () => SEED_CARDS.filter((c) => saves.ids.includes(c.id)),
@@ -95,9 +127,48 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Category chips only relevant to the feed */}
+        {/* Search + filters only relevant to the feed */}
         {view === 'feed' && (
-          <CategoryBar active={active} onSelect={setActive} />
+          <>
+            {/* Free-text search box */}
+            <div className="relative mt-3">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-emerald-950/50"
+              >
+                🔍
+              </span>
+              <input
+                type="search"
+                inputMode="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search titles, text, translations…"
+                aria-label="Search cards"
+                className="w-full rounded-full bg-white/90 py-2 pl-9 pr-9 text-sm text-emerald-950 placeholder:text-emerald-950/40 outline-none ring-1 ring-white/20 focus:ring-2 focus:ring-amber-300"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear search"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full px-1.5 text-emerald-950/50 hover:text-emerald-950"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {/* Content-type chips */}
+            <CategoryBar active={active} onSelect={setActive} />
+
+            {/* Topic-theme chips */}
+            <ThemeBar
+              active={activeTheme}
+              onSelect={setActiveTheme}
+              counts={themeCounts}
+            />
+          </>
         )}
       </header>
 
@@ -127,7 +198,7 @@ export default function App() {
       <main className="min-h-0 flex-1">
         {view === 'today' && <TodayView />}
         {view === 'feed' && (
-          <FeedView key={active} />
+          <FeedView key={`${active}-${activeTheme}-${q}`} />
         )}
         {view === 'saved' && <SavedView />}
         {view === 'ranking' && <Ranking youMs={screenMs} />}
@@ -161,10 +232,33 @@ export default function App() {
 
   function FeedView() {
     if (feedCards.length === 0) {
+      const themeLabel =
+        activeTheme === 'all' ? '' : ` in “${THEME_LABEL[activeTheme]}”`;
       return (
-        <p className="p-8 text-center text-white/70">
-          No cards in this category yet.
-        </p>
+        <div className="flex h-full flex-col items-center justify-center px-8 text-center">
+          <span className="text-3xl" aria-hidden>
+            🔍
+          </span>
+          <p className="mt-3 font-semibold">No cards match{themeLabel}</p>
+          <p className="mt-1 text-sm text-white/60">
+            {q
+              ? `Nothing found for “${query.trim()}”. Try another word or clear the filters.`
+              : 'Try a different topic or content type.'}
+          </p>
+          {(q || active !== 'all' || activeTheme !== 'all') && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setActive('all');
+                setActiveTheme('all');
+              }}
+              className="mt-4 rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-900"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
       );
     }
     return (

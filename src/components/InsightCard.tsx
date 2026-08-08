@@ -1,5 +1,5 @@
 import type { Card } from '../types';
-import { CATEGORY_LABEL } from '../types';
+import { CATEGORY_LABEL, THEME_LABEL } from '../types';
 
 interface Props {
   card: Card;
@@ -31,9 +31,16 @@ export default function InsightCard({
       <div className="w-full max-w-md rounded-3xl bg-sand-50 shadow-xl shadow-emerald-950/20 ring-1 ring-black/5 overflow-hidden">
         {/* Header row: category badge + review tag */}
         <div className="flex items-center justify-between gap-2 px-5 pt-5">
-          <span className="inline-flex items-center rounded-full bg-emerald-800/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">
-            {CATEGORY_LABEL[card.category]}
-          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center rounded-full bg-emerald-800/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">
+              {CATEGORY_LABEL[card.category]}
+            </span>
+            {card.theme !== 'general' && (
+              <span className="inline-flex items-center rounded-full bg-amber-200/70 px-3 py-1 text-xs font-semibold text-emerald-950">
+                {THEME_LABEL[card.theme]}
+              </span>
+            )}
+          </div>
           {card.needsReview && (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-300"
