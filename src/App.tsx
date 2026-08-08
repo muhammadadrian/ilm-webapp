@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { SEED_CARDS } from './data/seed';
-import type { Category, Theme, Difficulty } from './types';
+import type { Category, Theme, Difficulty, Card } from './types';
 import { THEME_LABEL } from './types';
 import { usePersistentSet, usePersistentFlag } from './lib/storage';
 import { dailyPick, todayLabel } from './lib/daily';
@@ -14,6 +14,7 @@ import Ranking from './components/Ranking';
 import Listen from './components/Listen';
 import Hadith from './components/Hadith';
 import Profile from './components/Profile';
+import GlobalSearch from './components/GlobalSearch';
 import { useScreenTime } from './lib/screenTime';
 import { usePoints } from './lib/points';
 
@@ -34,6 +35,13 @@ export default function App() {
     'all'
   );
   const [query, setQuery] = useState('');
+
+  // Global faceted search (top-right icon, every screen).
+  const [searchOpen, setSearchOpen] = useState(false);
+  // A card opened from the global search results (detail overlay).
+  const [openCard, setOpenCard] = useState<Card | null>(null);
+  // A hadith to focus when navigating to the Hadith section from search.
+  const [focusHadith, setFocusHadith] = useState<number | null>(null);
 
   const saves = usePersistentSet('ilm.saved');
   const likes = usePersistentSet('ilm.liked');
@@ -132,10 +140,22 @@ export default function App() {
               1 minute of Islamic knowledge, daily
             </p>
           </div>
-          {/* Knowledge points (profile area) */}
-          <button
-            type="button"
-            onClick={() => setView('ranking')}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Global search entry point — present on every screen */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Open search"
+              title="Search cards and hadith"
+              data-testid="global-search-button"
+              className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-lg ring-1 ring-white/15 transition hover:bg-white/20"
+            >
+              <span aria-hidden>🔍</span>
+            </button>
+            {/* Knowledge points (profile area) */}
+            <button
+              type="button"
+              onClick={() => setView('ranking')}
             aria-label={`${points} knowledge points from ${readCount} cards read — view ranking`}
             title={`${points} knowledge points · ${readCount} cards read`}
             className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-right ring-1 ring-white/15 transition hover:bg-white/20"
@@ -154,7 +174,8 @@ export default function App() {
                 pts
               </span>
             </span>
-          </button>
+            </button>
+          </div>
         </div>
         <nav className="no-scrollbar mt-3 flex gap-1 overflow-x-auto rounded-full bg-white/10 p-1 text-xs font-semibold">
           {(
@@ -270,12 +291,35 @@ export default function App() {
         {view === 'feed' && (
           <FeedView key={`${active}-${activeTheme}-${activeDifficulty}-${q}`} />
         )}
-        {view === 'hadith' && <Hadith />}
+        {view === 'hadith' && <Hadith focusHadithNumber={focusHadith} />}
         {view === 'saved' && <SavedView />}
         {view === 'ranking' && <Ranking youMs={screenMs} youPoints={points} />}
         {view === 'listen' && <Listen cards={SEED_CARDS} />}
         {view === 'profile' && <Profile points={points} screenMs={screenMs} />}
       </main>
+
+      {/* ── Global faceted search overlay (reachable from every screen) ── */}
+      {searchOpen && (
+        <GlobalSearch
+          cards={SEED_CARDS}
+          onClose={() => setSearchOpen(false)}
+          onOpenCard={(card) => {
+            setSearchOpen(false);
+            setOpenCard(card);
+          }}
+          onOpenHadith={(n) => {
+            setSearchOpen(false);
+            setOpenCard(null);
+            setFocusHadith(n);
+            setView('hadith');
+          }}
+        />
+      )}
+
+      {/* ── Card detail overlay (opened from a search result) ── */}
+      {openCard && (
+        <CardDetail card={openCard} onClose={() => setOpenCard(null)} />
+      )}
     </div>
   );
 
@@ -375,6 +419,35 @@ export default function App() {
         ))}
         <div className="pb-6 pt-2 text-center">
           <ResetLink onReset={resetApp} />
+        </div>
+      </div>
+    );
+  }
+
+  // Full-screen detail for a single card opened from the global search.
+  function CardDetail({ card, onClose }: { card: Card; onClose: () => void }) {
+    return (
+      <div
+        className="fixed inset-0 z-[70] flex flex-col bg-emerald-900"
+        role="dialog"
+        aria-modal="true"
+        aria-label={card.title}
+        data-testid="card-detail-overlay"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 bg-gradient-to-b from-emerald-950 to-emerald-900 px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold ring-1 ring-white/15 transition hover:bg-white/20"
+          >
+            ‹ Back to search
+          </button>
+          <span className="text-xs font-semibold uppercase tracking-widest text-white/50">
+            Card
+          </span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto py-2">
+          <InsightCard card={card} {...cardProps(card)} />
         </div>
       </div>
     );

@@ -22,13 +22,19 @@ import {
  * component mounts. Grading is NEVER shown as authoritative — every card
  * carries a neutral "grading not verified here" note.
  */
-export default function Hadith() {
+export default function Hadith({
+  focusHadithNumber = null,
+}: {
+  /** When set (e.g. from the global search), open and scroll to this hadith. */
+  focusHadithNumber?: number | null;
+} = {}) {
   const [data, setData] = useState<HadithCollection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [book, setBook] = useState<number | null>(null);
   const [chapter, setChapter] = useState<number | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty | 'all'>('all');
+  const [highlight, setHighlight] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -43,6 +49,31 @@ export default function Hadith() {
       alive = false;
     };
   }, []);
+
+  // When asked to focus a specific hadith (from the global search), open its
+  // book → chapter and clear any active query so the ChapterView renders it.
+  useEffect(() => {
+    if (!data || focusHadithNumber == null) return;
+    const h = data.hadiths.find((x) => x.hadithNumber === focusHadithNumber);
+    if (!h) return;
+    setQuery('');
+    setDifficulty('all');
+    setBook(h.book.number);
+    setChapter(h.chapter.number);
+    setHighlight(focusHadithNumber);
+  }, [data, focusHadithNumber]);
+
+  // Scroll the focused hadith into view once its chapter is rendered, then
+  // fade the highlight out.
+  useEffect(() => {
+    if (highlight == null || chapter == null) return;
+    const el = document.getElementById(`hadith-${highlight}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const t = window.setTimeout(() => setHighlight(null), 2600);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight, chapter, book]);
 
   const hadiths = data?.hadiths ?? [];
   const q = query.trim();
@@ -161,6 +192,7 @@ export default function Hadith() {
             bookName={currentBook.name}
             chapter={currentChapter}
             hadiths={chapterHadiths}
+            highlight={highlight}
             onBack={() => setChapter(null)}
             onBooks={() => {
               setBook(null);
@@ -271,12 +303,14 @@ function ChapterView({
   bookName,
   chapter,
   hadiths,
+  highlight = null,
   onBack,
   onBooks,
 }: {
   bookName: string;
   chapter: ReturnType<typeof groupChapters>[number];
   hadiths: HadithType[];
+  highlight?: number | null;
   onBack: () => void;
   onBooks: () => void;
 }) {
@@ -294,7 +328,11 @@ function ChapterView({
       </p>
       <div className="space-y-4">
         {hadiths.map((h) => (
-          <HadithCard key={h.hadithNumber} hadith={h} />
+          <HadithCard
+            key={h.hadithNumber}
+            hadith={h}
+            highlighted={highlight === h.hadithNumber}
+          />
         ))}
       </div>
     </>
@@ -377,12 +415,20 @@ function Breadcrumb({
 function HadithCard({
   hadith,
   showBook = false,
+  highlighted = false,
 }: {
   hadith: HadithType;
   showBook?: boolean;
+  highlighted?: boolean;
 }) {
   return (
-    <article className="overflow-hidden rounded-3xl bg-sand-50 shadow-xl shadow-emerald-950/20 ring-1 ring-black/5">
+    <article
+      id={`hadith-${hadith.hadithNumber}`}
+      className={
+        'overflow-hidden rounded-3xl bg-sand-50 shadow-xl shadow-emerald-950/20 ring-1 transition ' +
+        (highlighted ? 'ring-4 ring-amber-300' : 'ring-black/5')
+      }
+    >
       {/* Header: reference badge (+ book/chapter when in search results) */}
       <div className="flex flex-wrap items-center gap-1.5 px-5 pt-5">
         <span className="inline-flex items-center rounded-full bg-emerald-800/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">
