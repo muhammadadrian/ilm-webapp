@@ -13,6 +13,7 @@
  * as authoritative anywhere in the UI.
  */
 
+import { useEffect, useState } from 'react';
 import type { Difficulty } from '../types';
 
 export interface Hadith {
@@ -106,6 +107,53 @@ export function loadCollection(): Promise<HadithCollection> {
  */
 export function getCachedCollection(): HadithCollection | null {
   return cache;
+}
+
+/** Stable string id for a hadith, used as the key for saves + read-tracking. */
+export function hadithId(h: Pick<Hadith, 'hadithNumber'>): string {
+  return String(h.hadithNumber);
+}
+
+export interface UseHadithsState {
+  collection: HadithCollection | null;
+  hadiths: Hadith[];
+  loading: boolean;
+  error: string | null;
+}
+
+/**
+ * React hook that fetches (once) and returns the full Riyad us-Salihin
+ * collection. The whole app is built on this data, so it is loaded up front;
+ * the fetch is memoised (see loadCollection) so mounting this hook in several
+ * places never triggers more than one network request.
+ */
+export function useHadiths(): UseHadithsState {
+  const [collection, setCollection] = useState<HadithCollection | null>(() =>
+    getCachedCollection()
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (collection) return;
+    let alive = true;
+    loadCollection()
+      .then((d) => {
+        if (alive) setCollection(d);
+      })
+      .catch((e) => {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [collection]);
+
+  return {
+    collection,
+    hadiths: collection?.hadiths ?? [],
+    loading: !collection && !error,
+    error,
+  };
 }
 
 /** Distinct books in collection order. */

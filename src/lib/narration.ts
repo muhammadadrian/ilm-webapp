@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Card } from '../types';
+import type { Hadith } from './hadith';
 
 /**
  * Narration via the Web Speech API (speechSynthesis).
@@ -51,13 +51,17 @@ export function pickCalmVoice(
 }
 
 /**
- * The text spoken for a card: title + body, plus the translation when
- * present (Arabic script itself is left to the on-screen card).
+ * The text spoken for a hadith: its reference, then the narrator + English
+ * translation, then the Arabic. The device voice reads the English cleanly; the
+ * Arabic is appended so the original wording is voiced where the device has an
+ * Arabic voice (it is simply skipped by voices that cannot pronounce it).
  */
-export function narrationText(card: Card): string {
-  const parts = [card.title, card.body];
-  if (card.translation) parts.push(card.translation);
-  return parts.join('. ');
+export function narrationText(hadith: Hadith): string {
+  const parts = [hadith.reference];
+  const english = [hadith.narrator, hadith.english].filter(Boolean).join(' ').trim();
+  if (english) parts.push(english);
+  if (hadith.arabic) parts.push(hadith.arabic);
+  return parts.filter(Boolean).join('. ');
 }
 
 /**

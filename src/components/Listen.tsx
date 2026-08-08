@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Card } from '../types';
-import { CATEGORY_LABEL } from '../types';
+import type { Hadith } from '../lib/hadith';
 import {
   narrationText,
   pickCalmVoice,
@@ -12,19 +11,19 @@ import type { AmbiencePlayer } from '../lib/ambience';
 import { usePersistentFlag, usePersistentNumber } from '../lib/storage';
 
 interface Props {
-  cards: Card[];
+  hadiths: Hadith[];
 }
 
 /**
- * Commuter audio mode — a "Listen" experience that narrates the knowledge
- * cards with a calm voice over synthesized nature ambience, auto-advancing
- * through the deck. Background/lock-screen playback is premium-gated in a
- * YouTube-Premium style (mocked, no real payment).
+ * Commuter audio mode — a "Listen" experience that narrates the Riyad
+ * us-Salihin hadith with a calm voice over synthesized nature ambience,
+ * auto-advancing through the collection. Background/lock-screen playback is
+ * premium-gated in a YouTube-Premium style (mocked, no real payment).
  *
  * Everything is client-side and guarded so headless / unsupported browsers
  * render the UI without crashing (audio simply stays silent).
  */
-export default function Listen({ cards }: Props) {
+export default function Listen({ hadiths }: Props) {
   const voices = useVoices();
   const canSpeak = speechSupported();
 
@@ -61,7 +60,7 @@ export default function Listen({ cards }: Props) {
     premiumRef.current = premium;
   }, [premium]);
 
-  const current = cards[index];
+  const current = hadiths[index];
 
   // ── Ambience lifecycle ──────────────────────────────────────────────
   useEffect(() => {
@@ -113,8 +112,8 @@ export default function Listen({ cards }: Props) {
   const speakIndex = useCallback(
     (i: number) => {
       if (!canSpeak) return;
-      const card = cards[i];
-      if (!card) return;
+      const hadith = hadiths[i];
+      if (!hadith) return;
 
       cancelingRef.current = true;
       try {
@@ -124,7 +123,7 @@ export default function Listen({ cards }: Props) {
       }
       cancelingRef.current = false;
 
-      const utter = new SpeechSynthesisUtterance(narrationText(card));
+      const utter = new SpeechSynthesisUtterance(narrationText(hadith));
       const voice = pickCalmVoice(voices);
       if (voice) {
         utter.voice = voice;
@@ -139,7 +138,7 @@ export default function Listen({ cards }: Props) {
         if (cancelingRef.current) return;
         if (!playingRef.current) return;
         const next = indexRef.current + 1;
-        if (next < cards.length) {
+        if (next < hadiths.length) {
           indexRef.current = next;
           setIndex(next);
           speakIndex(next);
@@ -155,7 +154,7 @@ export default function Listen({ cards }: Props) {
         /* ignore */
       }
     },
-    [canSpeak, cards, voices]
+    [canSpeak, hadiths, voices]
   );
 
   // ── Transport controls ───────────────────────────────────────────────
@@ -176,12 +175,12 @@ export default function Listen({ cards }: Props) {
 
   const goTo = useCallback(
     (i: number) => {
-      const clamped = Math.max(0, Math.min(cards.length - 1, i));
+      const clamped = Math.max(0, Math.min(hadiths.length - 1, i));
       indexRef.current = clamped;
       setIndex(clamped);
       if (playingRef.current) speakIndex(clamped);
     },
-    [cards.length, speakIndex]
+    [hadiths.length, speakIndex]
   );
 
   const next = useCallback(() => goTo(indexRef.current + 1), [goTo]);
@@ -209,9 +208,9 @@ export default function Listen({ cards }: Props) {
     try {
       if (typeof MediaMetadata !== 'undefined' && current) {
         ms.metadata = new MediaMetadata({
-          title: current.title,
+          title: current.reference,
           artist: 'Ilm · Listen',
-          album: CATEGORY_LABEL[current.category],
+          album: current.book.name,
         });
       }
       ms.setActionHandler('play', () => play());
@@ -261,7 +260,7 @@ export default function Listen({ cards }: Props) {
           </p>
           <h2 className="mt-1 text-2xl font-bold">Hands-free knowledge</h2>
           <p className="mt-1 text-sm text-white/60">
-            Sit back and let the cards be narrated to you, one after another.
+            Sit back and let the hadith be narrated to you, one after another.
           </p>
         </div>
 
@@ -322,21 +321,27 @@ export default function Listen({ cards }: Props) {
         {/* Player */}
         <div className="mt-5 rounded-3xl bg-sand-50 p-5 text-ink shadow-xl shadow-emerald-950/20 ring-1 ring-black/5">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800/70">
-            {current ? CATEGORY_LABEL[current.category] : 'Nothing to play'} ·{' '}
-            {cards.length > 0 ? `${index + 1} / ${cards.length}` : '0 / 0'}
+            {current ? current.book.name : 'Nothing to play'} ·{' '}
+            {hadiths.length > 0 ? `${index + 1} / ${hadiths.length}` : '0 / 0'}
           </p>
           <p
             data-testid="now-playing"
             className="mt-1 text-lg font-bold leading-snug text-ink"
           >
-            {current ? current.title : 'No cards available'}
+            {current ? current.reference : 'No hadith available'}
           </p>
+          {current && (
+            <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-ink/60">
+              {current.narrator ? `${current.narrator} ` : ''}
+              {current.english}
+            </p>
+          )}
 
           {/* Transport */}
           <div className="mt-4 flex items-center justify-center gap-3">
             <button
               type="button"
-              aria-label="Previous card"
+              aria-label="Previous hadith"
               onClick={prev}
               disabled={index === 0}
               className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-800/10 text-lg text-emerald-900 transition hover:bg-emerald-800/20 disabled:opacity-40"
@@ -356,9 +361,9 @@ export default function Listen({ cards }: Props) {
             </button>
             <button
               type="button"
-              aria-label="Next card"
+              aria-label="Next hadith"
               onClick={next}
-              disabled={index >= cards.length - 1}
+              disabled={index >= hadiths.length - 1}
               className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-800/10 text-lg text-emerald-900 transition hover:bg-emerald-800/20 disabled:opacity-40"
             >
               ⏭

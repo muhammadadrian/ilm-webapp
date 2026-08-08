@@ -1,16 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Card } from '../types';
-import {
-  CATEGORY_LABEL,
-  THEME_LABEL,
-  DIFFICULTY_LABEL,
-  DIFFICULTY_BADGE,
-} from '../types';
-import {
-  loadCollection,
-  getCachedCollection,
-  type Hadith,
-} from '../lib/hadith';
+import { DIFFICULTY_LABEL, DIFFICULTY_BADGE } from '../types';
+import type { Hadith } from '../lib/hadith';
 import {
   explainPassage,
   findRelated,
@@ -18,36 +8,33 @@ import {
   type ExplainResult,
   type ExplainContext,
   type RelatedItem,
-  type RelatedSource,
 } from '../lib/explain';
 
 /**
  * Tap-to-explain overlay.
  *
  * Watches the browser Selection API for text highlighted inside any element
- * marked with `data-explain-source` (the card body region and the hadith
- * English/Arabic text — see InsightCard.tsx / Hadith.tsx). When a passage is
- * selected it floats a small "Explain this passage" bubble near the selection;
- * tapping it opens a panel with (1) a clearly-labelled DEMO explanation and
- * (2) a REAL list of related cards/hadith. The panel navigates to a tapped
- * item via the callbacks passed from App.
+ * marked `data-explain-source="hadith"` (the hadith English/Arabic region — see
+ * HadithCard.tsx). When a passage is selected it floats a small "Explain this
+ * passage" bubble near the selection; tapping it opens a panel with (1) a
+ * clearly-labelled DEMO explanation and (2) a REAL list of related hadith. The
+ * panel navigates to a tapped hadith via the callback passed from App.
  *
- * Mounted once at the App root so it works across the feed, saved, today, the
- * hadith section, and the card-detail / search overlays.
+ * Mounted once at the App root so it works across the feed, saved, today, and
+ * the hadith browse section.
  */
 
 interface Props {
-  cards: Card[];
-  onOpenCard: (card: Card) => void;
+  hadiths: Hadith[];
   onOpenHadith: (hadithNumber: number) => void;
 }
 
 /** Minimum trimmed selection length before the bubble is offered. */
 const MIN_SELECTION = 4;
 
+/** The hadith number the selection sits inside. */
 interface SourceRef {
-  kind: 'card' | 'hadith';
-  id: string;
+  hadithNumber: number;
 }
 
 interface BubbleState {
@@ -75,22 +62,22 @@ function readSelection(): { text: string; source: SourceRef; rect: DOMRect } | n
     node.nodeType === Node.ELEMENT_NODE
       ? (node as Element)
       : node.parentElement;
-  const host = el?.closest('[data-explain-source]') as HTMLElement | null;
+  const host = el?.closest('[data-explain-source="hadith"]') as HTMLElement | null;
   if (!host) return null;
 
-  const kind = host.getAttribute('data-explain-source');
   const id = host.getAttribute('data-explain-id');
-  if ((kind !== 'card' && kind !== 'hadith') || !id) return null;
+  const n = id ? Number(id) : NaN;
+  if (!Number.isFinite(n)) return null;
 
   const rect = range.getBoundingClientRect();
   if (!rect || (rect.width === 0 && rect.height === 0)) return null;
 
-  return { text, source: { kind, id }, rect };
+  return { text, source: { hadithNumber: n }, rect };
 }
 
 const BUBBLE_HEIGHT = 44;
 
-export default function TapToExplain({ cards, onOpenCard, onOpenHadith }: Props) {
+export default function TapToExplain({ hadiths, onOpenHadith }: Props) {
   const [bubble, setBubble] = useState<BubbleState | null>(null);
   const [panel, setPanel] = useState<PanelState | null>(null);
   const panelOpenRef = useRef(false);
@@ -174,12 +161,8 @@ export default function TapToExplain({ cards, onOpenCard, onOpenHadith }: Props)
         <ExplainPanel
           passage={panel.passage}
           source={panel.source}
-          cards={cards}
+          hadiths={hadiths}
           onClose={() => setPanel(null)}
-          onOpenCard={(c) => {
-            setPanel(null);
-            onOpenCard(c);
-          }}
           onOpenHadith={(n) => {
             setPanel(null);
             onOpenHadith(n);
@@ -195,21 +178,18 @@ export default function TapToExplain({ cards, onOpenCard, onOpenHadith }: Props)
 function ExplainPanel({
   passage,
   source,
-  cards,
+  hadiths,
   onClose,
-  onOpenCard,
   onOpenHadith,
 }: {
   passage: string;
   source: SourceRef;
-  cards: Card[];
+  hadiths: Hadith[];
   onClose: () => void;
-  onOpenCard: (card: Card) => void;
   onOpenHadith: (hadithNumber: number) => void;
 }) {
   const [explanation, setExplanation] = useState<ExplainResult | null>(null);
   const [related, setRelated] = useState<RelatedItem[] | null>(null);
-  const [relatedLoading, setRelatedLoading] = useState(true);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -219,63 +199,24 @@ function ExplainPanel({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Resolve the source card/hadith against a (possibly not-yet-loaded)
-  // collection.
-  const resolveSource = useCallback(
-    (hadiths: Hadith[]): RelatedSource | null => {
-      if (source.kind === 'card') {
-        const c = cards.find((x) => x.id === source.id);
-        return c ? { kind: 'card', card: c } : null;
-      }
-      const h = hadiths.find((x) => String(x.hadithNumber) === source.id);
-      return h ? { kind: 'hadith', hadith: h } : null;
-    },
-    [cards, source]
-  );
-
   useEffect(() => {
     let alive = true;
 
+    const src = hadiths.find((h) => h.hadithNumber === source.hadithNumber);
+
     // Explanation (demo now; real backend later — see lib/explain.ts seam).
-    const src = cards.find((c) => c.id === source.id);
-    const ctx: ExplainContext = {
-      kind: source.kind,
-      reference: source.kind === 'card' ? src?.reference : undefined,
-      theme: source.kind === 'card' ? src?.theme : undefined,
-    };
+    const ctx: ExplainContext = { reference: src?.reference };
     explainPassage(passage, ctx).then((r) => {
       if (alive) setExplanation(r);
     });
 
-    // Related — REAL, via the shared tagging/keyword system.
-    const cached = getCachedCollection();
-    const warmHadiths = cached?.hadiths ?? [];
-    const s1 = resolveSource(warmHadiths);
-    if (s1) {
-      setRelated(findRelated({ passage, source: s1, cards, hadiths: warmHadiths }));
-    }
-
-    if (!cached) {
-      // Enrich with hadith once the collection loads (and resolve a hadith
-      // source that needed it). Instant when already warm; a background fetch
-      // otherwise — the card matches above are already on screen.
-      setRelatedLoading(true);
-      loadCollection()
-        .then((col) => {
-          if (!alive) return;
-          const s2 = resolveSource(col.hadiths);
-          if (s2) {
-            setRelated(
-              findRelated({ passage, source: s2, cards, hadiths: col.hadiths })
-            );
-          }
-          setRelatedLoading(false);
-        })
-        .catch(() => {
-          if (alive) setRelatedLoading(false);
-        });
+    // Related — REAL, via the shared keyword system.
+    if (src) {
+      setRelated(
+        findRelated({ passage, source: { kind: 'hadith', hadith: src }, hadiths })
+      );
     } else {
-      setRelatedLoading(false);
+      setRelated([]);
     }
 
     return () => {
@@ -385,26 +326,25 @@ function ExplainPanel({
               <ul className="space-y-2">
                 {related.map((item) => (
                   <RelatedRow
-                    key={item.kind === 'card' ? item.card!.id : `h-${item.hadith!.hadithNumber}`}
+                    key={`h-${item.hadith.hadithNumber}`}
                     item={item}
-                    onOpenCard={onOpenCard}
                     onOpenHadith={onOpenHadith}
                   />
                 ))}
               </ul>
-            ) : relatedLoading ? (
+            ) : related ? (
+              <p className="rounded-2xl bg-white/5 px-4 py-3 text-sm text-white/60 ring-1 ring-white/10">
+                No closely related hadith found for this selection. Try
+                highlighting a longer, more distinctive phrase.
+              </p>
+            ) : (
               <div className="flex items-center gap-3 rounded-2xl bg-white/5 px-4 py-3 text-sm text-white/60">
                 <span
                   className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
                   aria-hidden
                 />
-                Finding related cards &amp; hadith…
+                Finding related hadith…
               </div>
-            ) : (
-              <p className="rounded-2xl bg-white/5 px-4 py-3 text-sm text-white/60 ring-1 ring-white/10">
-                No closely related items found for this selection. Try
-                highlighting a longer, more distinctive phrase.
-              </p>
             )}
           </section>
         </div>
@@ -417,56 +357,12 @@ function ExplainPanel({
 
 function RelatedRow({
   item,
-  onOpenCard,
   onOpenHadith,
 }: {
   item: RelatedItem;
-  onOpenCard: (card: Card) => void;
   onOpenHadith: (hadithNumber: number) => void;
 }) {
-  if (item.kind === 'card') {
-    const c = item.card!;
-    return (
-      <li>
-        <button
-          type="button"
-          data-testid="explain-related-item"
-          onClick={() => onOpenCard(c)}
-          className="flex w-full flex-col gap-1.5 rounded-2xl bg-white/10 px-4 py-3 text-left ring-1 ring-white/10 transition hover:bg-white/15"
-        >
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center rounded-full bg-emerald-600/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-50 ring-1 ring-emerald-300/30">
-              Card
-            </span>
-            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/70">
-              {CATEGORY_LABEL[c.category]}
-            </span>
-            {c.theme !== 'general' && (
-              <span className="inline-flex items-center rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-semibold text-emerald-950">
-                {THEME_LABEL[c.theme]}
-              </span>
-            )}
-            <span
-              className={
-                'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ' +
-                DIFFICULTY_BADGE[c.difficulty]
-              }
-            >
-              {DIFFICULTY_LABEL[c.difficulty]}
-            </span>
-          </div>
-          <p className="font-semibold leading-snug">{c.title}</p>
-          {c.reference && (
-            <p className="text-[11px] font-medium text-emerald-200/70">{c.reference}</p>
-          )}
-          <p className="text-[13px] leading-snug text-white/60">{excerpt(c.body, 110)}</p>
-          <RelatedReasons reasons={item.reasons} />
-        </button>
-      </li>
-    );
-  }
-
-  const h = item.hadith!;
+  const h = item.hadith;
   return (
     <li>
       <button

@@ -1,67 +1,60 @@
 import { useEffect, useMemo, useState } from 'react';
-import ShareMenu from './ShareMenu';
 import DifficultyBar from './DifficultyBar';
-import { snippet } from '../lib/share';
+import HadithCard from './HadithCard';
 import type { Difficulty } from '../types';
-import { DIFFICULTY_LABEL, DIFFICULTY_BADGE } from '../types';
 import {
-  loadCollection,
   groupBooks,
   groupChapters,
   searchHadiths,
   type Hadith as HadithType,
-  type HadithCollection,
 } from '../lib/hadith';
+
+/** Per-hadith save + read-tracking props supplied by App. */
+export interface HadithCardProps {
+  saved: boolean;
+  onToggleSave: (id: string) => void;
+  read: boolean;
+  onRead: () => void;
+}
 
 /**
  * Browsable + searchable Riyad us-Salihin section.
  *
- * The 1896 hadith live here in their own book → chapter → hadith hierarchy
- * (kept out of the curated daily feed so they don't swamp the short cards).
- * The collection is lazy-fetched from a static asset the first time this
- * component mounts. Grading is NEVER shown as authoritative — every card
- * carries a neutral "grading not verified here" note.
+ * The collection is loaded once by App and passed in. Hadith are browsed in
+ * their own book → chapter → hadith hierarchy, or found via full-text search.
+ * Grading is NEVER shown as authoritative — every card carries a neutral
+ * "grading not verified here" note.
  */
 export default function Hadith({
+  hadiths,
+  collectionMeta,
+  cardProps,
   focusHadithNumber = null,
 }: {
+  hadiths: HadithType[];
+  collectionMeta: { collection: string; collectionArabic: string; author: string; totalHadiths: number };
+  cardProps: (h: HadithType) => HadithCardProps;
   /** When set (e.g. from the global search), open and scroll to this hadith. */
   focusHadithNumber?: number | null;
-} = {}) {
-  const [data, setData] = useState<HadithCollection | null>(null);
-  const [error, setError] = useState<string | null>(null);
+}) {
   const [query, setQuery] = useState('');
   const [book, setBook] = useState<number | null>(null);
   const [chapter, setChapter] = useState<number | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty | 'all'>('all');
   const [highlight, setHighlight] = useState<number | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    loadCollection()
-      .then((d) => {
-        if (alive) setData(d);
-      })
-      .catch((e) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   // When asked to focus a specific hadith (from the global search), open its
   // book → chapter and clear any active query so the ChapterView renders it.
   useEffect(() => {
-    if (!data || focusHadithNumber == null) return;
-    const h = data.hadiths.find((x) => x.hadithNumber === focusHadithNumber);
+    if (focusHadithNumber == null) return;
+    const h = hadiths.find((x) => x.hadithNumber === focusHadithNumber);
     if (!h) return;
     setQuery('');
     setDifficulty('all');
     setBook(h.book.number);
     setChapter(h.chapter.number);
     setHighlight(focusHadithNumber);
-  }, [data, focusHadithNumber]);
+  }, [hadiths, focusHadithNumber]);
 
   // Scroll the focused hadith into view once its chapter is rendered, then
   // fade the highlight out.
@@ -75,7 +68,6 @@ export default function Hadith({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlight, chapter, book]);
 
-  const hadiths = data?.hadiths ?? [];
   const q = query.trim();
 
   const byDifficulty = (list: HadithType[]) =>
@@ -109,34 +101,6 @@ export default function Hadith({
   const currentBook = books.find((b) => b.number === book);
   const currentChapter = chapters.find((c) => c.number === chapter);
 
-  // ── Loading / error states ──
-  if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-        <span className="text-3xl" aria-hidden>
-          ⚠
-        </span>
-        <p className="mt-3 font-semibold">Could not load the collection</p>
-        <p className="mt-1 text-sm text-white/60">{error}</p>
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-        <span
-          className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white"
-          aria-hidden
-        />
-        <p className="mt-4 font-semibold">Loading Riyad us-Salihin…</p>
-        <p className="mt-1 text-sm text-white/60">
-          1,896 hadith · sourced from sunnah.com
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full flex-col">
       {/* ── Search + attribution ── */}
@@ -169,8 +133,9 @@ export default function Hadith({
           )}
         </div>
         <p className="mt-2 text-[11px] leading-snug text-white/50">
-          {data.collection} ({data.collectionArabic}) by {data.author} ·{' '}
-          {data.totalHadiths.toLocaleString()} hadith, sourced from sunnah.com
+          {collectionMeta.collection} ({collectionMeta.collectionArabic}) by{' '}
+          {collectionMeta.author} · {collectionMeta.totalHadiths.toLocaleString()} hadith,
+          sourced from sunnah.com
         </p>
         {/* Difficulty filter — narrows the hadith shown (search results and
             chapter view) by reading level. */}
@@ -186,6 +151,7 @@ export default function Hadith({
             results={searchResults}
             total={hadiths.length}
             query={q}
+            cardProps={cardProps}
           />
         ) : chapter !== null && currentBook && currentChapter ? (
           <ChapterView
@@ -193,6 +159,7 @@ export default function Hadith({
             chapter={currentChapter}
             hadiths={chapterHadiths}
             highlight={highlight}
+            cardProps={cardProps}
             onBack={() => setChapter(null)}
             onBooks={() => {
               setBook(null);
@@ -304,6 +271,7 @@ function ChapterView({
   chapter,
   hadiths,
   highlight = null,
+  cardProps,
   onBack,
   onBooks,
 }: {
@@ -311,6 +279,7 @@ function ChapterView({
   chapter: ReturnType<typeof groupChapters>[number];
   hadiths: HadithType[];
   highlight?: number | null;
+  cardProps: (h: HadithType) => HadithCardProps;
   onBack: () => void;
   onBooks: () => void;
 }) {
@@ -332,6 +301,7 @@ function ChapterView({
             key={h.hadithNumber}
             hadith={h}
             highlighted={highlight === h.hadithNumber}
+            {...cardProps(h)}
           />
         ))}
       </div>
@@ -345,10 +315,12 @@ function SearchResults({
   results,
   total,
   query,
+  cardProps,
 }: {
   results: HadithType[];
   total: number;
   query: string;
+  cardProps: (h: HadithType) => HadithCardProps;
 }) {
   return (
     <>
@@ -369,7 +341,7 @@ function SearchResults({
       ) : (
         <div className="space-y-4">
           {results.map((h) => (
-            <HadithCard key={h.hadithNumber} hadith={h} showBook />
+            <HadithCard key={h.hadithNumber} hadith={h} showBook {...cardProps(h)} />
           ))}
         </div>
       )}
@@ -407,97 +379,5 @@ function Breadcrumb({
         </span>
       ))}
     </nav>
-  );
-}
-
-// ── Hadith card (matches the app's sand/emerald card language) ──
-
-function HadithCard({
-  hadith,
-  showBook = false,
-  highlighted = false,
-}: {
-  hadith: HadithType;
-  showBook?: boolean;
-  highlighted?: boolean;
-}) {
-  return (
-    <article
-      id={`hadith-${hadith.hadithNumber}`}
-      className={
-        'overflow-hidden rounded-3xl bg-sand-50 shadow-xl shadow-emerald-950/20 ring-1 transition ' +
-        (highlighted ? 'ring-4 ring-amber-300' : 'ring-black/5')
-      }
-    >
-      {/* Header: reference badge (+ book/chapter when in search results) */}
-      <div className="flex flex-wrap items-center gap-1.5 px-5 pt-5">
-        <span className="inline-flex items-center rounded-full bg-emerald-800/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">
-          {hadith.reference}
-        </span>
-        {showBook && (
-          <span className="inline-flex items-center rounded-full bg-amber-200/70 px-3 py-1 text-xs font-semibold text-emerald-950">
-            {hadith.book.name}
-          </span>
-        )}
-        <span
-          data-difficulty={hadith.difficulty}
-          className={
-            'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ' +
-            DIFFICULTY_BADGE[hadith.difficulty]
-          }
-        >
-          {DIFFICULTY_LABEL[hadith.difficulty]}
-        </span>
-      </div>
-
-      {/* Body */}
-      <div className="px-5 pb-3 pt-4">
-        {/* Arabic + English marked explainable — highlighting either offers the
-            tap-to-explain bubble (see components/TapToExplain.tsx). */}
-        <div
-          data-explain-source="hadith"
-          data-explain-id={String(hadith.hadithNumber)}
-        >
-          <p className="arabic text-right text-2xl leading-loose text-emerald-900">
-            {hadith.arabic}
-          </p>
-
-          <p className="mt-4 text-[15px] leading-relaxed text-ink/80">
-            {hadith.narrator && (
-              <span className="font-medium text-emerald-800">
-                {hadith.narrator}{' '}
-              </span>
-            )}
-            {hadith.english}
-          </p>
-        </div>
-
-        <p className="mt-4 text-xs font-medium leading-relaxed text-emerald-800/70">
-          {hadith.reference} · {hadith.book.name} · {hadith.chapter.name}
-        </p>
-
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <a
-            href={hadith.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 underline-offset-2 hover:underline"
-          >
-            View on sunnah.com
-            <span aria-hidden>↗</span>
-          </a>
-          <ShareMenu
-            variant="inline"
-            text={snippet(`${hadith.reference} — ${hadith.english}`)}
-          />
-        </div>
-
-        {/* Grading is NOT authoritative — the upstream blanket "Sahih" is unverified. */}
-        <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-900/90 ring-1 ring-amber-200">
-          <span className="font-semibold">Grading not verified here.</span>{' '}
-          Confirm the authentication on sunnah.com before relying on it.
-        </p>
-      </div>
-    </article>
   );
 }

@@ -1,5 +1,3 @@
-import type { Card } from '../types';
-
 /**
  * Deterministic "today's pick".
  * Derives a stable index from the current date (YYYY-MM-DD) so the pick does
@@ -15,9 +13,10 @@ export function dailyIndex(count: number, date: Date = new Date()): number {
   return dayNumber % count;
 }
 
-export function dailyPick(cards: Card[], date: Date = new Date()): Card | undefined {
-  if (cards.length === 0) return undefined;
-  return cards[dailyIndex(cards.length, date)];
+/** The deterministic pick for today from any non-empty list. */
+export function dailyPick<T>(items: T[], date: Date = new Date()): T | undefined {
+  if (items.length === 0) return undefined;
+  return items[dailyIndex(items.length, date)];
 }
 
 export function todayLabel(date: Date = new Date()): string {

@@ -1,18 +1,20 @@
-import { useMemo, useState } from 'react';
-import { SEED_CARDS } from './data/seed';
-import type { Category, Theme, Difficulty, Card } from './types';
-import { THEME_LABEL } from './types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Difficulty } from './types';
 import { usePersistentSet, usePersistentFlag } from './lib/storage';
 import { dailyPick, todayLabel } from './lib/daily';
-import InsightCard from './components/InsightCard';
-import CategoryBar from './components/CategoryBar';
-import ThemeBar from './components/ThemeBar';
+import {
+  useHadiths,
+  searchHadiths,
+  hadithId,
+  type Hadith as HadithType,
+} from './lib/hadith';
 import DifficultyBar from './components/DifficultyBar';
+import HadithCard from './components/HadithCard';
 import Login from './components/Login';
 import Onboarding from './components/Onboarding';
 import Ranking from './components/Ranking';
 import Listen from './components/Listen';
-import Hadith from './components/Hadith';
+import Hadith, { type HadithCardProps } from './components/Hadith';
 import Profile from './components/Profile';
 import GlobalSearch from './components/GlobalSearch';
 import TapToExplain from './components/TapToExplain';
@@ -28,10 +30,11 @@ type View =
   | 'hadith'
   | 'profile';
 
+/** Views that render hadith and therefore need the collection loaded first. */
+const DATA_VIEWS: View[] = ['today', 'feed', 'saved', 'listen', 'hadith'];
+
 export default function App() {
   const [view, setView] = useState<View>('feed');
-  const [active, setActive] = useState<Category | 'all'>('all');
-  const [activeTheme, setActiveTheme] = useState<Theme | 'all'>('all');
   const [activeDifficulty, setActiveDifficulty] = useState<Difficulty | 'all'>(
     'all'
   );
@@ -39,22 +42,23 @@ export default function App() {
 
   // Global faceted search (top-right icon, every screen).
   const [searchOpen, setSearchOpen] = useState(false);
-  // A card opened from the global search results (detail overlay).
-  const [openCard, setOpenCard] = useState<Card | null>(null);
   // A hadith to focus when navigating to the Hadith section from search.
   const [focusHadith, setFocusHadith] = useState<number | null>(null);
 
+  // Bookmarked hadith (persisted by hadith number as a string id).
   const saves = usePersistentSet('ilm.saved');
-  const likes = usePersistentSet('ilm.liked');
-  const [verifyOpen, setVerifyOpen] = useState(false);
 
   const [loggedIn, setLoggedIn] = usePersistentFlag('ilm.loggedIn');
   const [onboarded, setOnboarded] = usePersistentFlag('ilm.onboarded');
 
   // Track the current user's on-screen time only once the feed is reached.
   const screenMs = useScreenTime(loggedIn && onboarded);
-  // Difficulty-weighted knowledge points earned by reading cards.
+  // Difficulty-weighted knowledge points earned by reading hadith.
   const { points, readCount, hasRead, awardRead } = usePoints();
+
+  // The whole app is built on the Riyad us-Salihin collection — load it up
+  // front (the fetch is memoised, so it happens at most once).
+  const { collection, hadiths, loading, error } = useHadiths();
 
   const resetApp = () => {
     setOnboarded(false);
@@ -62,73 +66,47 @@ export default function App() {
     setView('feed');
   };
 
-  const pick = useMemo(() => dailyPick(SEED_CARDS), []);
-
-  // Free-text search across title / body / translation (case-insensitive).
-  const q = query.trim().toLowerCase();
-  const searchMatch = useMemo(() => {
-    if (!q) return () => true;
-    return (c: (typeof SEED_CARDS)[number]) =>
-      c.title.toLowerCase().includes(q) ||
-      c.body.toLowerCase().includes(q) ||
-      (c.translation?.toLowerCase().includes(q) ?? false);
-  }, [q]);
-
-  // Feed = content-type × topic-theme × difficulty × search text.
-  const feedCards = useMemo(() => {
-    return SEED_CARDS.filter(
-      (c) =>
-        (active === 'all' || c.category === active) &&
-        (activeTheme === 'all' || c.theme === activeTheme) &&
-        (activeDifficulty === 'all' || c.difficulty === activeDifficulty) &&
-        searchMatch(c)
-    );
-  }, [active, activeTheme, activeDifficulty, searchMatch]);
-
-  // Per-difficulty counts for the current content-type + theme + search
-  // selection, so the difficulty chips show how many cards each level holds.
+  // ── Derived hadith lists ──
+  const q = query.trim();
+  const searched = useMemo(
+    () => (q ? searchHadiths(hadiths, q) : hadiths),
+    [hadiths, q]
+  );
+  const feedHadiths = useMemo(
+    () =>
+      activeDifficulty === 'all'
+        ? searched
+        : searched.filter((h) => h.difficulty === activeDifficulty),
+    [searched, activeDifficulty]
+  );
   const difficultyCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: 0 };
-    for (const c of SEED_CARDS) {
-      if (active !== 'all' && c.category !== active) continue;
-      if (activeTheme !== 'all' && c.theme !== activeTheme) continue;
-      if (!searchMatch(c)) continue;
-      counts.all += 1;
-      counts[c.difficulty] = (counts[c.difficulty] ?? 0) + 1;
+    const counts: Record<string, number> = { all: searched.length };
+    for (const h of searched) {
+      counts[h.difficulty] = (counts[h.difficulty] ?? 0) + 1;
     }
     return counts;
-  }, [active, activeTheme, searchMatch]);
+  }, [searched]);
 
-  // Per-theme counts for the current search + content-type selection, so the
-  // theme chips show how many cards each topic holds right now.
-  const themeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: 0 };
-    for (const c of SEED_CARDS) {
-      if (active !== 'all' && c.category !== active) continue;
-      if (!searchMatch(c)) continue;
-      counts.all += 1;
-      counts[c.theme] = (counts[c.theme] ?? 0) + 1;
-    }
-    return counts;
-  }, [active, searchMatch]);
+  const todayHadith = useMemo(() => dailyPick(hadiths), [hadiths]);
 
-  const savedCards = useMemo(
-    () => SEED_CARDS.filter((c) => saves.ids.includes(c.id)),
-    [saves.ids]
+  const savedHadiths = useMemo(
+    () => hadiths.filter((h) => saves.has(hadithId(h))),
+    [hadiths, saves.ids] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const cardProps = (card: (typeof SEED_CARDS)[number]) => ({
-    saved: saves.has(card.id),
-    liked: likes.has(card.id),
+  // Per-hadith save + read-tracking props, shared by every hadith surface.
+  const hadithProps = (h: HadithType): HadithCardProps => ({
+    saved: saves.has(hadithId(h)),
     onToggleSave: saves.toggle,
-    onToggleLike: likes.toggle,
-    read: hasRead(card.id),
-    onRead: () => awardRead(card.id, card.difficulty),
+    read: hasRead(hadithId(h)),
+    onRead: () => awardRead(hadithId(h), h.difficulty),
   });
 
   // ── Stage gating (localStorage-backed) ──
   if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
   if (!onboarded) return <Onboarding onDone={() => setOnboarded(true)} />;
+
+  const needsData = DATA_VIEWS.includes(view);
 
   return (
     <div className="flex h-[100dvh] flex-col bg-emerald-900 text-white">
@@ -147,7 +125,7 @@ export default function App() {
               type="button"
               onClick={() => setSearchOpen(true)}
               aria-label="Open search"
-              title="Search cards and hadith"
+              title="Search hadith"
               data-testid="global-search-button"
               className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-lg ring-1 ring-white/15 transition hover:bg-white/20"
             >
@@ -157,24 +135,24 @@ export default function App() {
             <button
               type="button"
               onClick={() => setView('ranking')}
-            aria-label={`${points} knowledge points from ${readCount} cards read — view ranking`}
-            title={`${points} knowledge points · ${readCount} cards read`}
-            className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-right ring-1 ring-white/15 transition hover:bg-white/20"
-          >
-            <span className="flex items-baseline gap-1">
-              <span aria-hidden className="text-amber-300">
-                ★
+              aria-label={`${points} knowledge points from ${readCount} hadith read — view ranking`}
+              title={`${points} knowledge points · ${readCount} hadith read`}
+              className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-right ring-1 ring-white/15 transition hover:bg-white/20"
+            >
+              <span className="flex items-baseline gap-1">
+                <span aria-hidden className="text-amber-300">
+                  ★
+                </span>
+                <span
+                  data-testid="points-total"
+                  className="text-sm font-bold text-white"
+                >
+                  {points.toLocaleString()}
+                </span>
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                  pts
+                </span>
               </span>
-              <span
-                data-testid="points-total"
-                className="text-sm font-bold text-white"
-              >
-                {points.toLocaleString()}
-              </span>
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                pts
-              </span>
-            </span>
             </button>
           </div>
         </div>
@@ -223,8 +201,8 @@ export default function App() {
                 inputMode="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search titles, text, translations…"
-                aria-label="Search cards"
+                placeholder="Search hadith — English, Arabic, reference…"
+                aria-label="Search hadith"
                 className="w-full rounded-full bg-white/90 py-2 pl-9 pr-9 text-sm text-emerald-950 placeholder:text-emerald-950/40 outline-none ring-1 ring-white/20 focus:ring-2 focus:ring-amber-300"
               />
               {query && (
@@ -239,102 +217,80 @@ export default function App() {
               )}
             </div>
 
-            {/* Content-type chips */}
-            <CategoryBar active={active} onSelect={setActive} />
-
-            {/* Topic-theme chips */}
-            <ThemeBar
-              active={activeTheme}
-              onSelect={setActiveTheme}
-              counts={themeCounts}
-            />
-
             {/* Difficulty-level chips */}
-            <DifficultyBar
-              active={activeDifficulty}
-              onSelect={setActiveDifficulty}
-              counts={difficultyCounts}
-            />
+            <div className="pt-2">
+              <DifficultyBar
+                active={activeDifficulty}
+                onSelect={setActiveDifficulty}
+                counts={difficultyCounts}
+              />
+            </div>
           </>
         )}
       </header>
 
-      {/* ── Persistent placeholder-content banner ──
-          Hidden for the Hadith section: that content is real, sourced from
-          sunnah.com (not placeholder demo cards), and carries its own
-          per-hadith "grading not verified" note instead. */}
-      {view !== 'hadith' && (
-      <div className="flex shrink-0 items-center gap-2 bg-amber-100 px-4 py-2 text-[11px] leading-snug text-amber-900">
-        <span aria-hidden className="self-start pt-px">
-          ⚠
-        </span>
-        <p className="flex-1">
-          <span className="font-bold">Placeholder / demo content.</span> None of
-          these cards are scholarly-verified. Every entry must be reviewed and
-          sourced by a qualified person before use.
-        </p>
-        <button
-          type="button"
-          onClick={() => setVerifyOpen(true)}
-          className="shrink-0 rounded-md bg-amber-900 px-2.5 py-1 font-semibold text-amber-50 hover:bg-amber-800"
-        >
-          Verify Now
-        </button>
-      </div>
-      )}
-
-      {/* ── Verification modal ── */}
-      {verifyOpen && <VerifyModal onClose={() => setVerifyOpen(false)} />}
-
       {/* ── Content ── */}
       <main className="min-h-0 flex-1">
-        {view === 'today' && <TodayView />}
-        {view === 'feed' && (
-          <FeedView key={`${active}-${activeTheme}-${activeDifficulty}-${q}`} />
+        {needsData && error ? (
+          <LoadError message={error} />
+        ) : needsData && loading ? (
+          <Loading />
+        ) : (
+          <>
+            {view === 'today' && <TodayView />}
+            {view === 'feed' && (
+              <HadithFeed
+                hadiths={feedHadiths}
+                cardProps={hadithProps}
+                hasActiveFilters={!!q || activeDifficulty !== 'all'}
+                query={q}
+                onClearFilters={() => {
+                  setQuery('');
+                  setActiveDifficulty('all');
+                }}
+              />
+            )}
+            {view === 'hadith' && collection && (
+              <Hadith
+                hadiths={hadiths}
+                collectionMeta={collection}
+                cardProps={hadithProps}
+                focusHadithNumber={focusHadith}
+              />
+            )}
+            {view === 'saved' && <SavedView />}
+            {view === 'ranking' && (
+              <Ranking youMs={screenMs} youPoints={points} />
+            )}
+            {view === 'listen' && <Listen hadiths={hadiths} />}
+            {view === 'profile' && (
+              <Profile points={points} screenMs={screenMs} />
+            )}
+          </>
         )}
-        {view === 'hadith' && <Hadith focusHadithNumber={focusHadith} />}
-        {view === 'saved' && <SavedView />}
-        {view === 'ranking' && <Ranking youMs={screenMs} youPoints={points} />}
-        {view === 'listen' && <Listen cards={SEED_CARDS} />}
-        {view === 'profile' && <Profile points={points} screenMs={screenMs} />}
       </main>
 
       {/* ── Global faceted search overlay (reachable from every screen) ── */}
       {searchOpen && (
         <GlobalSearch
-          cards={SEED_CARDS}
+          hadiths={hadiths}
           onClose={() => setSearchOpen(false)}
-          onOpenCard={(card) => {
-            setSearchOpen(false);
-            setOpenCard(card);
-          }}
           onOpenHadith={(n) => {
             setSearchOpen(false);
-            setOpenCard(null);
             setFocusHadith(n);
             setView('hadith');
           }}
         />
       )}
 
-      {/* ── Card detail overlay (opened from a search result) ── */}
-      {openCard && (
-        <CardDetail card={openCard} onClose={() => setOpenCard(null)} />
-      )}
-
       {/* ── Tap-to-explain: selection bubble + explanation/related panel ──
-          Mounted at the root so it works across the feed, saved, today, the
-          hadith section, and the card-detail overlay. Related items reuse the
-          same tag/keyword matching as the global search. */}
+          Mounted at the root so it works across the feed, saved, today, and the
+          hadith browse section. Related items reuse the same keyword matching
+          as the global search. */}
       <TapToExplain
-        cards={SEED_CARDS}
-        onOpenCard={(card) => {
-          setSearchOpen(false);
-          setOpenCard(card);
-        }}
+        hadiths={hadiths}
         onOpenHadith={(n) => {
           setSearchOpen(false);
-          setOpenCard(null);
           setFocusHadith(n);
           setView('hadith');
         }}
@@ -351,66 +307,24 @@ export default function App() {
           <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
             Today · {todayLabel()}
           </p>
-          <h2 className="mt-1 text-2xl font-bold">Your 1-minute pick</h2>
+          <h2 className="mt-1 text-2xl font-bold">Your 1-minute hadith</h2>
           <p className="mt-1 text-sm text-white/60">
-            A single insight, chosen for today.
+            A single narration from Riyad us-Salihin, chosen for today.
           </p>
         </div>
-        {pick ? (
-          <InsightCard card={pick} {...cardProps(pick)} />
+        {todayHadith ? (
+          <div className="px-1 py-4">
+            <HadithCard hadith={todayHadith} showBook {...hadithProps(todayHadith)} />
+          </div>
         ) : (
-          <p className="p-8 text-center text-white/70">No content available.</p>
+          <p className="p-8 text-center text-white/70">No hadith available.</p>
         )}
       </div>
     );
   }
 
-  function FeedView() {
-    if (feedCards.length === 0) {
-      const themeLabel =
-        activeTheme === 'all' ? '' : ` in “${THEME_LABEL[activeTheme]}”`;
-      return (
-        <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-          <span className="text-3xl" aria-hidden>
-            🔍
-          </span>
-          <p className="mt-3 font-semibold">No cards match{themeLabel}</p>
-          <p className="mt-1 text-sm text-white/60">
-            {q
-              ? `Nothing found for “${query.trim()}”. Try another word or clear the filters.`
-              : 'Try a different topic or content type.'}
-          </p>
-          {(q ||
-            active !== 'all' ||
-            activeTheme !== 'all' ||
-            activeDifficulty !== 'all') && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery('');
-                setActive('all');
-                setActiveTheme('all');
-                setActiveDifficulty('all');
-              }}
-              className="mt-4 rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-900"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      );
-    }
-    return (
-      <div className="no-scrollbar h-full snap-y snap-mandatory overflow-y-auto scroll-smooth">
-        {feedCards.map((card) => (
-          <InsightCard key={card.id} card={card} fill {...cardProps(card)} />
-        ))}
-      </div>
-    );
-  }
-
   function SavedView() {
-    if (savedCards.length === 0) {
+    if (savedHadiths.length === 0) {
       return (
         <div className="flex h-full flex-col items-center justify-center px-8 text-center">
           <span className="text-4xl" aria-hidden>
@@ -418,7 +332,7 @@ export default function App() {
           </span>
           <p className="mt-3 font-semibold">Nothing saved yet</p>
           <p className="mt-1 text-sm text-white/60">
-            Tap “Save” on any card and it will appear here.
+            Tap “Save” on any hadith and it will appear here.
           </p>
           <button
             type="button"
@@ -432,9 +346,9 @@ export default function App() {
       );
     }
     return (
-      <div className="h-full overflow-y-auto py-2">
-        {savedCards.map((card) => (
-          <InsightCard key={card.id} card={card} {...cardProps(card)} />
+      <div className="h-full space-y-4 overflow-y-auto px-1 py-4">
+        {savedHadiths.map((h) => (
+          <HadithCard key={h.hadithNumber} hadith={h} showBook {...hadithProps(h)} />
         ))}
         <div className="pb-6 pt-2 text-center">
           <ResetLink onReset={resetApp} />
@@ -442,35 +356,124 @@ export default function App() {
       </div>
     );
   }
+}
 
-  // Full-screen detail for a single card opened from the global search.
-  function CardDetail({ card, onClose }: { card: Card; onClose: () => void }) {
+// ── Feed (top-level so pagination + scroll survive App re-renders) ──
+
+const FEED_PAGE = 20;
+
+function HadithFeed({
+  hadiths,
+  cardProps,
+  hasActiveFilters,
+  query,
+  onClearFilters,
+}: {
+  hadiths: HadithType[];
+  cardProps: (h: HadithType) => HadithCardProps;
+  hasActiveFilters: boolean;
+  query: string;
+  onClearFilters: () => void;
+}) {
+  const [visible, setVisible] = useState(FEED_PAGE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset the window whenever the filtered list changes (new search/filter).
+  useEffect(() => {
+    setVisible(FEED_PAGE);
+  }, [hadiths]);
+
+  // Grow the window as the sentinel scrolls into view (lazy pagination over the
+  // full 1,896-hadith collection).
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible((v) => Math.min(v + FEED_PAGE, hadiths.length));
+        }
+      },
+      { rootMargin: '600px 0px' }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hadiths.length]);
+
+  if (hadiths.length === 0) {
     return (
-      <div
-        className="fixed inset-0 z-[70] flex flex-col bg-emerald-900"
-        role="dialog"
-        aria-modal="true"
-        aria-label={card.title}
-        data-testid="card-detail-overlay"
-      >
-        <div className="flex shrink-0 items-center justify-between gap-3 bg-gradient-to-b from-emerald-950 to-emerald-900 px-4 py-3">
+      <div className="flex h-full flex-col items-center justify-center px-8 text-center">
+        <span className="text-3xl" aria-hidden>
+          🔍
+        </span>
+        <p className="mt-3 font-semibold">No hadith match</p>
+        <p className="mt-1 text-sm text-white/60">
+          {query
+            ? `Nothing found for “${query}”. Try another word or clear the filters.`
+            : 'Try a different difficulty level.'}
+        </p>
+        {hasActiveFilters && (
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-semibold ring-1 ring-white/15 transition hover:bg-white/20"
+            onClick={onClearFilters}
+            className="mt-4 rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-900"
           >
-            ‹ Back to search
+            Clear filters
           </button>
-          <span className="text-xs font-semibold uppercase tracking-widest text-white/50">
-            Card
-          </span>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto py-2">
-          <InsightCard card={card} {...cardProps(card)} />
-        </div>
+        )}
       </div>
     );
   }
+
+  const shown = hadiths.slice(0, visible);
+  return (
+    <div className="no-scrollbar h-full snap-y snap-mandatory overflow-y-auto scroll-smooth">
+      {shown.map((h) => (
+        <HadithCard key={h.hadithNumber} hadith={h} fill showBook {...cardProps(h)} />
+      ))}
+      {visible < hadiths.length && (
+        <div
+          ref={sentinelRef}
+          className="flex items-center justify-center py-8 text-sm text-white/50"
+        >
+          <span
+            className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+            aria-hidden
+          />
+          Loading more hadith…
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Loading / error states for the hadith-backed views ──
+
+function Loading() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-8 text-center">
+      <span
+        className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white"
+        aria-hidden
+      />
+      <p className="mt-4 font-semibold">Loading Riyad us-Salihin…</p>
+      <p className="mt-1 text-sm text-white/60">
+        1,896 hadith · sourced from sunnah.com
+      </p>
+    </div>
+  );
+}
+
+function LoadError({ message }: { message: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-8 text-center">
+      <span className="text-3xl" aria-hidden>
+        ⚠
+      </span>
+      <p className="mt-3 font-semibold">Could not load the collection</p>
+      <p className="mt-1 text-sm text-white/60">{message}</p>
+    </div>
+  );
 }
 
 // ── Reset link (re-runs the login → onboarding flow for demos) ──
@@ -484,110 +487,5 @@ function ResetLink({ onReset }: { onReset: () => void }) {
     >
       Reset app (replay login &amp; onboarding)
     </button>
-  );
-}
-
-// ── Verification modal ──
-
-function VerifyModal({ onClose }: { onClose: () => void }) {
-  const items: Array<[string, string]> = [
-    [
-      'Quran / Tafsir',
-      'Confirm the ayah reference and replace explanations with a cited scholarly tafsir (e.g. Ibn Kathir, Tabari).',
-    ],
-    [
-      'Hadith',
-      'Replace with a sourced, authenticated narration including collection and grading.',
-    ],
-    [
-      'Scholar quotes',
-      'Supply a verifiable source and correct attribution.',
-    ],
-    [
-      'Fiqh',
-      'Confirm rulings and note the madhhab; rulings differ.',
-    ],
-    [
-      'Duas / Aqidah / Adab / Seerah / Vocab / Reflections',
-      'Verify wording, Arabic, and translation.',
-    ],
-  ];
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="verify-title"
-    >
-      <div
-        className="my-auto w-full max-w-md rounded-2xl bg-stone-50 text-stone-800 shadow-xl ring-1 ring-emerald-900/10"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-stone-200 px-5 pb-3 pt-4">
-          <div>
-            <h2 id="verify-title" className="text-lg font-bold text-emerald-900">
-              Verify this content
-            </h2>
-            <p className="mt-0.5 text-xs text-stone-500">
-              Review before anything is shared or relied upon.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="-mr-1 shrink-0 rounded-full p-1.5 text-stone-500 hover:bg-stone-200 hover:text-stone-800"
-          >
-            <span aria-hidden className="block text-xl leading-none">
-              ×
-            </span>
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
-          <p className="text-sm leading-relaxed text-stone-700">
-            Every card in this app is{' '}
-            <span className="font-semibold">placeholder demo content</span>. Before
-            any of it is used, shared, or relied upon, it must be reviewed and
-            sourced by a qualified person. Here is what to check for each type of
-            content:
-          </p>
-
-          <ul className="mt-4 space-y-3">
-            {items.map(([label, detail]) => (
-              <li
-                key={label}
-                className="rounded-xl border border-stone-200 bg-white px-3.5 py-2.5"
-              >
-                <p className="text-sm font-semibold text-emerald-900">{label}</p>
-                <p className="mt-0.5 text-[13px] leading-snug text-stone-600">
-                  {detail}
-                </p>
-              </li>
-            ))}
-          </ul>
-
-          <p className="mt-4 rounded-xl bg-amber-100 px-3.5 py-2.5 text-[12px] leading-snug text-amber-900">
-            This review workflow is itself a placeholder — real verification
-            tooling can be wired up later.
-          </p>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end border-t border-stone-200 px-5 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full bg-emerald-900 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
-          >
-            Got it
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

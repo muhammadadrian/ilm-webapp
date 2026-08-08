@@ -290,10 +290,10 @@ function VolunteerScreen() {
       icon={<span className="text-6xl leading-none">📖</span>}
       title="Scholars: help us verify"
     >
-      <p>
-        Every card is placeholder content until a qualified person reviews and
-        sources it. If you&rsquo;re a scholar or student of knowledge, volunteer
-        to help verify.
+        <p>
+        The hadith come from Riyad us-Salihin via sunnah.com, but their grading
+        is not verified here. If you&rsquo;re a scholar or student of knowledge,
+        volunteer to help review and confirm sourcing.
       </p>
       {submitted ? (
         <p className="mx-auto mt-4 max-w-xs rounded-xl bg-white/10 px-4 py-3 text-[13px] leading-snug text-white/80 ring-1 ring-white/15">

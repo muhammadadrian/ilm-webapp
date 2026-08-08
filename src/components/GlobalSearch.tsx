@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Card, Theme } from '../types';
-import {
-  THEMES,
-  THEME_LABEL,
-  CATEGORY_LABEL,
-  DIFFICULTY_LABEL,
-  DIFFICULTY_BADGE,
-} from '../types';
-import { loadCollection, type Hadith, type HadithCollection } from '../lib/hadith';
+import { DIFFICULTY_LABEL, DIFFICULTY_BADGE } from '../types';
+import type { Hadith } from '../lib/hadith';
 import {
   FACETS,
   EMOTIONS,
   LIFE_ISSUES,
-  matchCards,
   matchHadith,
   isActiveSearch,
   excerpt,
@@ -20,32 +12,25 @@ import {
 } from '../lib/search';
 
 interface Props {
-  cards: Card[];
+  hadiths: Hadith[];
   onClose: () => void;
-  onOpenCard: (card: Card) => void;
   onOpenHadith: (hadithNumber: number) => void;
 }
 
-/** How many results of each kind to render at once (counts still show totals). */
-const RENDER_CAP = 50;
+/** How many results to render at once (the count line still shows the total). */
+const RENDER_CAP = 60;
 
 /**
  * Full-screen, global faceted search overlay. Reachable from the top-right icon
- * on every screen. Searches the curated cards (in-bundle) and — once a search
- * is run — the lazily-loaded Riyad us-Salihin hadith. See lib/search.ts for the
- * facet/emotion/life-issue mappings.
+ * on every screen. Searches the 1,896 Riyad us-Salihin hadith. See lib/search.ts
+ * for the facet/emotion/life-issue keyword mappings.
  */
-export default function GlobalSearch({ cards, onClose, onOpenCard, onOpenHadith }: Props) {
+export default function GlobalSearch({ hadiths, onClose, onOpenHadith }: Props) {
   const [facet, setFacet] = useState<Facet>('all');
   const [query, setQuery] = useState('');
   const [selection, setSelection] = useState<string | null>(null);
 
-  const [hadithData, setHadithData] = useState<HadithCollection | null>(null);
-  const [hadithLoading, setHadithLoading] = useState(false);
-  const [hadithError, setHadithError] = useState<string | null>(null);
-
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const loadStartedRef = useRef(false);
 
   // Focus the search box on open, and close on Escape.
   useEffect(() => {
@@ -59,29 +44,9 @@ export default function GlobalSearch({ cards, onClose, onOpenCard, onOpenHadith 
 
   const active = isActiveSearch(facet, query, selection);
 
-  // Lazy-load the hadith collection the first time a real search is run, so the
-  // initial app load stays fast. A ref guards against re-entry — we deliberately
-  // do NOT depend on the loading/data state (setting state that is also a
-  // dependency would tear the effect down mid-fetch).
-  useEffect(() => {
-    if (!active || loadStartedRef.current) return;
-    loadStartedRef.current = true;
-    setHadithLoading(true);
-    setHadithError(null);
-    loadCollection()
-      .then((d) => setHadithData(d))
-      .catch((e) => setHadithError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setHadithLoading(false));
-  }, [active]);
-
-  const cardResults = useMemo(
-    () => (active ? matchCards(cards, facet, query, selection) : []),
-    [cards, facet, query, selection, active]
-  );
-
-  const hadithResults = useMemo(
-    () => (active && hadithData ? matchHadith(hadithData.hadiths, facet, query, selection) : []),
-    [hadithData, facet, query, selection, active]
+  const results = useMemo(
+    () => (active ? matchHadith(hadiths, facet, query, selection) : []),
+    [hadiths, facet, query, selection, active]
   );
 
   // Reset the chip selection whenever the facet changes.
@@ -90,20 +55,18 @@ export default function GlobalSearch({ cards, onClose, onOpenCard, onOpenHadith 
     setSelection(null);
   };
 
-  const totalCount = cardResults.length + hadithResults.length;
-  const showChips = facet === 'topic' || facet === 'emotion' || facet === 'life';
+  const totalCount = results.length;
+  const showChips = facet === 'emotion' || facet === 'life';
   const facetMeta = FACETS.find((f) => f.key === facet)!;
 
   const placeholder =
     facet === 'scholar'
-      ? 'Narrator or attribution, e.g. Abu Hurairah, Umar…'
+      ? 'Narrator, e.g. Abu Hurairah, Umar…'
       : facet === 'quran'
         ? 'Reference like 2:255, or words from a verse…'
-        : facet === 'topic'
-          ? 'Optional: narrow the topic with a word…'
-          : facet === 'emotion' || facet === 'life'
-            ? 'Optional: add a word to narrow…'
-            : 'Search cards and 1,896 hadith…';
+        : facet === 'emotion' || facet === 'life'
+          ? 'Optional: add a word to narrow…'
+          : 'Search 1,896 hadith…';
 
   return (
     <div
@@ -185,17 +148,6 @@ export default function GlobalSearch({ cards, onClose, onOpenCard, onOpenHadith 
         {/* ── Facet-specific chips ── */}
         {showChips && (
           <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto pb-1">
-            {facet === 'topic' &&
-              THEMES.filter((t) => t.key !== 'general').map((t) => (
-                <Chip
-                  key={t.key}
-                  active={selection === t.key}
-                  onClick={() => setSelection(selection === t.key ? null : (t.key as Theme))}
-                  testid={`topic-${t.key}`}
-                >
-                  {t.label}
-                </Chip>
-              ))}
             {facet === 'emotion' &&
               EMOTIONS.map((e) => (
                 <Chip
@@ -236,15 +188,7 @@ export default function GlobalSearch({ cards, onClose, onOpenCard, onOpenHadith 
               <span className="font-semibold text-white/80" data-testid="result-count">
                 {totalCount.toLocaleString()}
               </span>{' '}
-              result{totalCount === 1 ? '' : 's'} · {cardResults.length.toLocaleString()} card
-              {cardResults.length === 1 ? '' : 's'} ·{' '}
-              {hadithLoading ? (
-                <span className="text-amber-200">loading hadith…</span>
-              ) : (
-                <>
-                  {hadithResults.length.toLocaleString()} hadith
-                </>
-              )}
+              hadith result{totalCount === 1 ? '' : 's'}
             </>
           )}
         </p>
@@ -256,48 +200,22 @@ export default function GlobalSearch({ cards, onClose, onOpenCard, onOpenHadith 
           <EmptyPrompt facet={facet} />
         ) : (
           <>
-            {/* Cards */}
-            {cardResults.slice(0, RENDER_CAP).map((c) => (
-              <CardResultRow key={c.id} card={c} onClick={() => onOpenCard(c)} />
-            ))}
-            {cardResults.length > RENDER_CAP && (
-              <p className="mb-3 mt-1 text-center text-xs text-white/40">
-                Showing first {RENDER_CAP} of {cardResults.length.toLocaleString()} cards — refine
-                your search to see more.
-              </p>
-            )}
-
-            {/* Hadith */}
-            {hadithLoading && (
-              <div className="flex items-center gap-3 rounded-2xl bg-white/5 px-4 py-3 text-sm text-white/60">
-                <span
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
-                  aria-hidden
-                />
-                Searching 1,896 hadith…
-              </div>
-            )}
-            {hadithError && (
-              <p className="rounded-2xl bg-amber-100/90 px-4 py-3 text-sm text-amber-900">
-                Could not load hadith: {hadithError}
-              </p>
-            )}
-            {hadithResults.slice(0, RENDER_CAP).map((h) => (
+            {results.slice(0, RENDER_CAP).map((h) => (
               <HadithResultRow
                 key={h.hadithNumber}
                 hadith={h}
                 onClick={() => onOpenHadith(h.hadithNumber)}
               />
             ))}
-            {hadithResults.length > RENDER_CAP && (
+            {results.length > RENDER_CAP && (
               <p className="mb-3 mt-1 text-center text-xs text-white/40">
-                Showing first {RENDER_CAP} of {hadithResults.length.toLocaleString()} hadith —
+                Showing first {RENDER_CAP} of {results.length.toLocaleString()} hadith —
                 refine your search to see more.
               </p>
             )}
 
             {/* Nothing matched */}
-            {!hadithLoading && totalCount === 0 && (
+            {totalCount === 0 && (
               <div className="flex flex-col items-center justify-center px-8 py-16 text-center">
                 <span className="text-3xl" aria-hidden>
                   🔍
@@ -358,48 +276,6 @@ function EmptyPrompt({ facet }: { facet: Facet }) {
       <p className="mt-3 font-semibold">{meta.label} search</p>
       <p className="mt-1 max-w-xs text-sm text-white/60">{meta.hint}</p>
     </div>
-  );
-}
-
-// ── Card result row ──
-
-function CardResultRow({ card, onClick }: { card: Card; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      data-testid="result-card"
-      className="mb-2 flex w-full flex-col gap-1.5 rounded-2xl bg-white/10 px-4 py-3 text-left ring-1 ring-white/10 transition hover:bg-white/15"
-    >
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="inline-flex items-center rounded-full bg-emerald-600/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-50 ring-1 ring-emerald-300/30">
-          Card
-        </span>
-        <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/70">
-          {CATEGORY_LABEL[card.category]}
-        </span>
-        {card.theme !== 'general' && (
-          <span className="inline-flex items-center rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-semibold text-emerald-950">
-            {THEME_LABEL[card.theme]}
-          </span>
-        )}
-        <span
-          className={
-            'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ' +
-            DIFFICULTY_BADGE[card.difficulty]
-          }
-        >
-          {DIFFICULTY_LABEL[card.difficulty]}
-        </span>
-      </div>
-      <p className="font-semibold leading-snug">{card.title}</p>
-      <p className="text-[13px] leading-snug text-white/60">
-        {excerpt(card.translation ? `“${card.translation}” — ${card.body}` : card.body)}
-      </p>
-      {card.reference && (
-        <p className="text-[11px] font-medium text-emerald-200/70">{card.reference}</p>
-      )}
-    </button>
   );
 }
 
