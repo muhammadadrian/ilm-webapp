@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { demoScreenTimeMs } from './screenTime';
+import { demoPoints } from './points';
 
 /**
  * Friends list, persisted to localStorage. There is no backend, so a
@@ -11,6 +12,7 @@ export interface Friend {
   email: string;
   name: string;
   screenTimeMs: number;
+  points: number;
 }
 
 export const FRIENDS_KEY = 'ilm.friends';
@@ -41,13 +43,19 @@ function read(): Friend[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (f): f is Friend =>
-        f &&
-        typeof f.email === 'string' &&
-        typeof f.name === 'string' &&
-        typeof f.screenTimeMs === 'number'
-    );
+    return parsed
+      .filter(
+        (f): f is Omit<Friend, 'points'> & { points?: number } =>
+          f &&
+          typeof f.email === 'string' &&
+          typeof f.name === 'string' &&
+          typeof f.screenTimeMs === 'number'
+      )
+      // Backfill demo points for friends persisted before points existed.
+      .map((f) => ({
+        ...f,
+        points: typeof f.points === 'number' ? f.points : demoPoints(f.email),
+      }));
   } catch {
     return [];
   }
@@ -84,6 +92,7 @@ export function useFriends(): {
         email,
         name: nameFromEmail(email),
         screenTimeMs: demoScreenTimeMs(email),
+        points: demoPoints(email),
       };
       return [...prev, friend];
     });

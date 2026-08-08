@@ -1,5 +1,6 @@
+import { useEffect, useRef } from 'react';
 import type { Card } from '../types';
-import { CATEGORY_LABEL, THEME_LABEL } from '../types';
+import { CATEGORY_LABEL, THEME_LABEL, DIFFICULTY_LABEL, DIFFICULTY_BADGE } from '../types';
 import ShareMenu from './ShareMenu';
 import { snippet } from '../lib/share';
 
@@ -11,6 +12,10 @@ interface Props {
   onToggleLike: (id: string) => void;
   /** When true the card fills the snap-viewport height (feed mode). */
   fill?: boolean;
+  /** Called once when the card is first "read" (scrolled into view). */
+  onRead?: () => void;
+  /** Whether this card has already been read (awards its points once). */
+  read?: boolean;
 }
 
 export default function InsightCard({
@@ -20,9 +25,35 @@ export default function InsightCard({
   onToggleSave,
   onToggleLike,
   fill = false,
+  onRead,
+  read = false,
 }: Props) {
+  // Award points the first time the card scrolls substantially into view.
+  const ref = useRef<HTMLElement | null>(null);
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (!onRead) return;
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && !firedRef.current) {
+            firedRef.current = true;
+            onRead();
+            io.disconnect();
+          }
+        }
+      },
+      { threshold: 0.6 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [onRead]);
+
   return (
     <article
+      ref={ref}
       className={
         (fill
           ? 'min-h-[calc(100dvh-8.5rem)] snap-start '
@@ -40,6 +71,23 @@ export default function InsightCard({
             {card.theme !== 'general' && (
               <span className="inline-flex items-center rounded-full bg-amber-200/70 px-3 py-1 text-xs font-semibold text-emerald-950">
                 {THEME_LABEL[card.theme]}
+              </span>
+            )}
+            <span
+              data-difficulty={card.difficulty}
+              className={
+                'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ' +
+                DIFFICULTY_BADGE[card.difficulty]
+              }
+            >
+              {DIFFICULTY_LABEL[card.difficulty]}
+            </span>
+            {read && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-800 px-2.5 py-1 text-[10px] font-semibold text-white"
+                title="You've read this — points awarded"
+              >
+                ✓ Read
               </span>
             )}
           </div>

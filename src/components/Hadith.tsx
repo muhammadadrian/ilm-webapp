@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import ShareMenu from './ShareMenu';
+import DifficultyBar from './DifficultyBar';
 import { snippet } from '../lib/share';
+import type { Difficulty } from '../types';
+import { DIFFICULTY_LABEL, DIFFICULTY_BADGE } from '../types';
 import {
   loadCollection,
   groupBooks,
@@ -25,6 +28,7 @@ export default function Hadith() {
   const [query, setQuery] = useState('');
   const [book, setBook] = useState<number | null>(null);
   const [chapter, setChapter] = useState<number | null>(null);
+  const [difficulty, setDifficulty] = useState<Difficulty | 'all'>('all');
 
   useEffect(() => {
     let alive = true;
@@ -43,9 +47,15 @@ export default function Hadith() {
   const hadiths = data?.hadiths ?? [];
   const q = query.trim();
 
+  const byDifficulty = (list: HadithType[]) =>
+    difficulty === 'all'
+      ? list
+      : list.filter((h) => h.difficulty === difficulty);
+
   const searchResults = useMemo(
-    () => (q ? searchHadiths(hadiths, q) : []),
-    [hadiths, q]
+    () => (q ? byDifficulty(searchHadiths(hadiths, q)) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hadiths, q, difficulty]
   );
   const books = useMemo(() => groupBooks(hadiths), [hadiths]);
   const chapters = useMemo(
@@ -55,11 +65,14 @@ export default function Hadith() {
   const chapterHadiths = useMemo(
     () =>
       book !== null && chapter !== null
-        ? hadiths.filter(
-            (h) => h.book.number === book && h.chapter.number === chapter
+        ? byDifficulty(
+            hadiths.filter(
+              (h) => h.book.number === book && h.chapter.number === chapter
+            )
           )
         : [],
-    [hadiths, book, chapter]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hadiths, book, chapter, difficulty]
   );
 
   const currentBook = books.find((b) => b.number === book);
@@ -128,6 +141,11 @@ export default function Hadith() {
           {data.collection} ({data.collectionArabic}) by {data.author} ·{' '}
           {data.totalHadiths.toLocaleString()} hadith, sourced from sunnah.com
         </p>
+        {/* Difficulty filter — narrows the hadith shown (search results and
+            chapter view) by reading level. */}
+        <div className="mt-2">
+          <DifficultyBar active={difficulty} onSelect={setDifficulty} />
+        </div>
       </div>
 
       {/* ── Body ── */}
@@ -375,6 +393,15 @@ function HadithCard({
             {hadith.book.name}
           </span>
         )}
+        <span
+          data-difficulty={hadith.difficulty}
+          className={
+            'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ' +
+            DIFFICULTY_BADGE[hadith.difficulty]
+          }
+        >
+          {DIFFICULTY_LABEL[hadith.difficulty]}
+        </span>
       </div>
 
       {/* Body */}

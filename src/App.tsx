@@ -1,18 +1,20 @@
 import { useMemo, useState } from 'react';
 import { SEED_CARDS } from './data/seed';
-import type { Category, Theme } from './types';
+import type { Category, Theme, Difficulty } from './types';
 import { THEME_LABEL } from './types';
 import { usePersistentSet, usePersistentFlag } from './lib/storage';
 import { dailyPick, todayLabel } from './lib/daily';
 import InsightCard from './components/InsightCard';
 import CategoryBar from './components/CategoryBar';
 import ThemeBar from './components/ThemeBar';
+import DifficultyBar from './components/DifficultyBar';
 import Login from './components/Login';
 import Onboarding from './components/Onboarding';
 import Ranking from './components/Ranking';
 import Listen from './components/Listen';
 import Hadith from './components/Hadith';
 import { useScreenTime } from './lib/screenTime';
+import { usePoints } from './lib/points';
 
 type View = 'today' | 'feed' | 'saved' | 'ranking' | 'listen' | 'hadith';
 
@@ -20,6 +22,9 @@ export default function App() {
   const [view, setView] = useState<View>('feed');
   const [active, setActive] = useState<Category | 'all'>('all');
   const [activeTheme, setActiveTheme] = useState<Theme | 'all'>('all');
+  const [activeDifficulty, setActiveDifficulty] = useState<Difficulty | 'all'>(
+    'all'
+  );
   const [query, setQuery] = useState('');
 
   const saves = usePersistentSet('ilm.saved');
@@ -31,6 +36,8 @@ export default function App() {
 
   // Track the current user's on-screen time only once the feed is reached.
   const screenMs = useScreenTime(loggedIn && onboarded);
+  // Difficulty-weighted knowledge points earned by reading cards.
+  const { points, readCount, hasRead, awardRead } = usePoints();
 
   const resetApp = () => {
     setOnboarded(false);
@@ -50,14 +57,29 @@ export default function App() {
       (c.translation?.toLowerCase().includes(q) ?? false);
   }, [q]);
 
-  // Feed = content-type filter × topic-theme filter × search text.
+  // Feed = content-type × topic-theme × difficulty × search text.
   const feedCards = useMemo(() => {
     return SEED_CARDS.filter(
       (c) =>
         (active === 'all' || c.category === active) &&
         (activeTheme === 'all' || c.theme === activeTheme) &&
+        (activeDifficulty === 'all' || c.difficulty === activeDifficulty) &&
         searchMatch(c)
     );
+  }, [active, activeTheme, activeDifficulty, searchMatch]);
+
+  // Per-difficulty counts for the current content-type + theme + search
+  // selection, so the difficulty chips show how many cards each level holds.
+  const difficultyCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0 };
+    for (const c of SEED_CARDS) {
+      if (active !== 'all' && c.category !== active) continue;
+      if (activeTheme !== 'all' && c.theme !== activeTheme) continue;
+      if (!searchMatch(c)) continue;
+      counts.all += 1;
+      counts[c.difficulty] = (counts[c.difficulty] ?? 0) + 1;
+    }
+    return counts;
   }, [active, activeTheme, searchMatch]);
 
   // Per-theme counts for the current search + content-type selection, so the
@@ -78,11 +100,13 @@ export default function App() {
     [saves.ids]
   );
 
-  const cardProps = (id: string) => ({
-    saved: saves.has(id),
-    liked: likes.has(id),
+  const cardProps = (card: (typeof SEED_CARDS)[number]) => ({
+    saved: saves.has(card.id),
+    liked: likes.has(card.id),
     onToggleSave: saves.toggle,
     onToggleLike: likes.toggle,
+    read: hasRead(card.id),
+    onRead: () => awardRead(card.id, card.difficulty),
   });
 
   // ── Stage gating (localStorage-backed) ──
@@ -93,13 +117,36 @@ export default function App() {
     <div className="flex h-[100dvh] flex-col bg-emerald-900 text-white">
       {/* ── Header ── */}
       <header className="shrink-0 bg-gradient-to-b from-emerald-950 to-emerald-900 px-4 pt-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-bold leading-tight">Ilm</h1>
             <p className="text-[11px] text-white/60">
               1 minute of Islamic knowledge, daily
             </p>
           </div>
+          {/* Knowledge points (profile area) */}
+          <button
+            type="button"
+            onClick={() => setView('ranking')}
+            aria-label={`${points} knowledge points from ${readCount} cards read — view ranking`}
+            title={`${points} knowledge points · ${readCount} cards read`}
+            className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-right ring-1 ring-white/15 transition hover:bg-white/20"
+          >
+            <span className="flex items-baseline gap-1">
+              <span aria-hidden className="text-amber-300">
+                ★
+              </span>
+              <span
+                data-testid="points-total"
+                className="text-sm font-bold text-white"
+              >
+                {points.toLocaleString()}
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                pts
+              </span>
+            </span>
+          </button>
         </div>
         <nav className="no-scrollbar mt-3 flex gap-1 overflow-x-auto rounded-full bg-white/10 p-1 text-xs font-semibold">
           {(
@@ -170,6 +217,13 @@ export default function App() {
               onSelect={setActiveTheme}
               counts={themeCounts}
             />
+
+            {/* Difficulty-level chips */}
+            <DifficultyBar
+              active={activeDifficulty}
+              onSelect={setActiveDifficulty}
+              counts={difficultyCounts}
+            />
           </>
         )}
       </header>
@@ -205,11 +259,11 @@ export default function App() {
       <main className="min-h-0 flex-1">
         {view === 'today' && <TodayView />}
         {view === 'feed' && (
-          <FeedView key={`${active}-${activeTheme}-${q}`} />
+          <FeedView key={`${active}-${activeTheme}-${activeDifficulty}-${q}`} />
         )}
         {view === 'hadith' && <Hadith />}
         {view === 'saved' && <SavedView />}
-        {view === 'ranking' && <Ranking youMs={screenMs} />}
+        {view === 'ranking' && <Ranking youMs={screenMs} youPoints={points} />}
         {view === 'listen' && <Listen cards={SEED_CARDS} />}
       </main>
     </div>
@@ -230,7 +284,7 @@ export default function App() {
           </p>
         </div>
         {pick ? (
-          <InsightCard card={pick} {...cardProps(pick.id)} />
+          <InsightCard card={pick} {...cardProps(pick)} />
         ) : (
           <p className="p-8 text-center text-white/70">No content available.</p>
         )}
@@ -253,13 +307,17 @@ export default function App() {
               ? `Nothing found for “${query.trim()}”. Try another word or clear the filters.`
               : 'Try a different topic or content type.'}
           </p>
-          {(q || active !== 'all' || activeTheme !== 'all') && (
+          {(q ||
+            active !== 'all' ||
+            activeTheme !== 'all' ||
+            activeDifficulty !== 'all') && (
             <button
               type="button"
               onClick={() => {
                 setQuery('');
                 setActive('all');
                 setActiveTheme('all');
+                setActiveDifficulty('all');
               }}
               className="mt-4 rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-900"
             >
@@ -272,7 +330,7 @@ export default function App() {
     return (
       <div className="no-scrollbar h-full snap-y snap-mandatory overflow-y-auto scroll-smooth">
         {feedCards.map((card) => (
-          <InsightCard key={card.id} card={card} fill {...cardProps(card.id)} />
+          <InsightCard key={card.id} card={card} fill {...cardProps(card)} />
         ))}
       </div>
     );
@@ -303,7 +361,7 @@ export default function App() {
     return (
       <div className="h-full overflow-y-auto py-2">
         {savedCards.map((card) => (
-          <InsightCard key={card.id} card={card} {...cardProps(card.id)} />
+          <InsightCard key={card.id} card={card} {...cardProps(card)} />
         ))}
         <div className="pb-6 pt-2 text-center">
           <ResetLink onReset={resetApp} />

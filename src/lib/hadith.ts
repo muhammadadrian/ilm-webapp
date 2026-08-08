@@ -13,6 +13,8 @@
  * as authoritative anywhere in the UI.
  */
 
+import type { Difficulty } from '../types';
+
 export interface Hadith {
   hadithNumber: number;
   book: { number: number; name: string };
@@ -22,6 +24,30 @@ export interface Hadith {
   narrator: string;
   reference: string; // e.g. "Riyad as-Salihin 1"
   sourceUrl: string; // sunnah.com permalink
+  difficulty: Difficulty; // derived at load time (see hadithDifficulty)
+}
+
+/**
+ * Deterministic difficulty heuristic for a hadith, based on the length of its
+ * English translation (narrator + text). Longer, more detailed narrations tend
+ * to demand more of the reader, so:
+ *   - short  (< 300 chars)      → beginner
+ *   - medium (300–699 chars)    → intermediate
+ *   - long   (>= 700 chars)     → advanced
+ * Stable by construction: the same hadith text always maps to the same level.
+ * With these thresholds the 1,896 records split roughly 52% / 36% / 12%.
+ */
+const HADITH_BEGINNER_MAX = 300;
+const HADITH_INTERMEDIATE_MAX = 700;
+
+export function hadithDifficulty(h: {
+  english: string;
+  narrator?: string;
+}): Difficulty {
+  const len = `${h.narrator ?? ''} ${h.english ?? ''}`.trim().length;
+  if (len < HADITH_BEGINNER_MAX) return 'beginner';
+  if (len < HADITH_INTERMEDIATE_MAX) return 'intermediate';
+  return 'advanced';
 }
 
 export interface HadithCollection {
@@ -51,9 +77,18 @@ export function loadCollection(): Promise<HadithCollection> {
       return res.json() as Promise<HadithCollection>;
     })
     .then((data) => {
-      cache = data;
+      // Attach a deterministic difficulty to each record at load time so we
+      // never hand-tag 1,896 hadith (see hadithDifficulty).
+      const withDifficulty: HadithCollection = {
+        ...data,
+        hadiths: data.hadiths.map((h) => ({
+          ...h,
+          difficulty: hadithDifficulty(h),
+        })),
+      };
+      cache = withDifficulty;
       inFlight = null;
-      return data;
+      return withDifficulty;
     })
     .catch((err) => {
       inFlight = null;

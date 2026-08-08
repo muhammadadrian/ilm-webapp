@@ -5,37 +5,55 @@ import { formatDuration } from '../lib/screenTime';
 interface Props {
   /** The current user's real, tracked on-screen time in ms. */
   youMs: number;
+  /** The current user's real, earned knowledge points. */
+  youPoints: number;
 }
+
+type Metric = 'time' | 'points';
 
 interface Row {
   key: string;
   name: string;
   screenTimeMs: number;
+  points: number;
   you: boolean;
 }
 
 /**
- * Friends ranking. Ranks the current user ("You", real tracked time)
- * against added friends (demo time) by total on-screen time, longest
- * first. Add friends by email; the list persists in localStorage.
+ * Friends ranking. Ranks the current user ("You", real tracked time + points)
+ * against added friends (demo time + demo points). The leaderboard can be
+ * ranked by on-screen time OR by difficulty-weighted knowledge points via the
+ * metric toggle. Add friends by email; the list persists in localStorage.
  */
-export default function Ranking({ youMs }: Props) {
+export default function Ranking({ youMs, youPoints }: Props) {
   const { friends, addFriend, removeFriend } = useFriends();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [metric, setMetric] = useState<Metric>('time');
 
   const rows = useMemo<Row[]>(() => {
     const all: Row[] = [
-      { key: '__you__', name: 'You', screenTimeMs: youMs, you: true },
+      {
+        key: '__you__',
+        name: 'You',
+        screenTimeMs: youMs,
+        points: youPoints,
+        you: true,
+      },
       ...friends.map((f) => ({
         key: f.email,
         name: f.name,
         screenTimeMs: f.screenTimeMs,
+        points: f.points,
         you: false,
       })),
     ];
-    return all.sort((a, b) => b.screenTimeMs - a.screenTimeMs);
-  }, [friends, youMs]);
+    return all.sort((a, b) =>
+      metric === 'time'
+        ? b.screenTimeMs - a.screenTimeMs
+        : b.points - a.points
+    );
+  }, [friends, youMs, youPoints, metric]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,10 +72,44 @@ export default function Ranking({ youMs }: Props) {
         <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
           Ranking
         </p>
-        <h2 className="mt-1 text-2xl font-bold">Time on screen</h2>
+        <h2 className="mt-1 text-2xl font-bold">
+          {metric === 'time' ? 'Time on screen' : 'Knowledge points'}
+        </h2>
         <p className="mt-1 text-sm text-white/60">
-          Ranked by total time spent learning — longest first.
+          {metric === 'time'
+            ? 'Ranked by total time spent learning — longest first.'
+            : 'Ranked by difficulty-weighted points earned — highest first.'}
         </p>
+
+        {/* Metric toggle: rank by time vs points */}
+        <div
+          role="tablist"
+          aria-label="Rank by"
+          className="mx-auto mt-3 inline-flex gap-1 rounded-full bg-white/10 p-1 text-xs font-semibold"
+        >
+          {(
+            [
+              ['time', 'Time'],
+              ['points', 'Points'],
+            ] as Array<[Metric, string]>
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={metric === key}
+              onClick={() => setMetric(key)}
+              className={
+                'rounded-full px-4 py-1.5 transition ' +
+                (metric === key
+                  ? 'bg-white text-emerald-900'
+                  : 'text-white/70 hover:text-white')
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Add a friend by email */}
@@ -128,8 +180,17 @@ export default function Ranking({ youMs }: Props) {
                   </span>
                 )}
               </span>
-              <span className="text-sm font-bold text-amber-300">
-                {formatDuration(row.screenTimeMs)}
+              <span className="text-right text-sm font-bold text-amber-300">
+                {metric === 'time' ? (
+                  formatDuration(row.screenTimeMs)
+                ) : (
+                  <span className="whitespace-nowrap">
+                    {row.points.toLocaleString()}
+                    <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-amber-300/70">
+                      pts
+                    </span>
+                  </span>
+                )}
               </span>
               {!row.you && (
                 <button
@@ -159,7 +220,9 @@ export default function Ranking({ youMs }: Props) {
             ⓘ
           </span>
           <span>
-            Your time is tracked live on this device. Friend activity is
+            Your time and knowledge points are tracked live on this device.
+            Points are earned by reading cards — harder levels are worth more
+            (Beginner 10, Intermediate 20, Advanced 30). Friend activity is
             sample data until a backend is connected.
           </span>
         </p>

@@ -21,9 +21,15 @@
  * ============================================================================
  */
 
-import type { Card } from '../types';
+import type { Card, Category, Difficulty } from '../types';
 
-export const SEED_CARDS: Card[] = [
+/**
+ * Raw seed cards (without a difficulty). Difficulty is attached below by a
+ * sensible content-type mapping plus a handful of per-card overrides, keeping
+ * the difficulty assignment in the seed data while avoiding noise on every
+ * object literal.
+ */
+const RAW_CARDS: Omit<Card, 'difficulty'>[] = [
   // ─────────────────────────────── TAFSIR ───────────────────────────────
   {
     id: 'tafsir-1',
@@ -1381,3 +1387,52 @@ export const SEED_CARDS: Card[] = [
     sourceNote: 'General seerah impression, not a cited narration. Needs review: verify against authentic seerah and hadith sources, and add a specific citation once confirmed by a qualified scholar before presenting as historical fact.',
   },
 ];
+
+/**
+ * Difficulty by content type (the default for a card of that category):
+ *  - beginner:     reflections, adab/reminders, duas, short vocabulary
+ *  - intermediate: tafsir, hadith-theme, aqidah, seerah, scholar quotes
+ *  - advanced:     fiqh (rulings, madhhab nuance)
+ */
+const DIFFICULTY_BY_CATEGORY: Record<Category, Difficulty> = {
+  reflection: 'beginner',
+  adab: 'beginner',
+  dua: 'beginner',
+  vocab: 'beginner',
+  tafsir: 'intermediate',
+  hadith: 'intermediate',
+  aqidah: 'intermediate',
+  seerah: 'intermediate',
+  quote: 'intermediate',
+  fiqh: 'advanced',
+};
+
+/**
+ * Per-card overrides where a card clearly fits a different level than its
+ * category default — so the assignment isn't purely mechanical.
+ */
+const DIFFICULTY_OVERRIDES: Record<string, Difficulty> = {
+  // Denser theology / nuanced rulings → advanced
+  'aqidah-3': 'advanced', // the beautiful names of God (deep)
+  'tafsir-4': 'advanced', // the Throne Verse — heavy aqidah content
+  'productivity-aqidah': 'advanced', // qadar & effort together
+  // Accessible fiqh basics → intermediate
+  'fiqh-1': 'intermediate', // wudu, in brief
+  'fiqh-2': 'intermediate', // the five daily prayers
+  'parenting-fiqh': 'intermediate', // when children begin to pray
+  // Denser beginner-category cards → intermediate
+  'productivity-reflection': 'intermediate', // israf of time
+  'business-ethics-adab': 'intermediate', // adab of buying and selling
+  // Very short, accessible intermediate-category cards → beginner
+  'hadith-1': 'beginner', // on kindness
+  'hadith-4': 'beginner', // on a cheerful face
+  'quote-1': 'beginner', // on seeking knowledge
+  'quote-2': 'beginner', // on humility
+  'seerah-1': 'beginner', // a trustworthy reputation
+};
+
+export const SEED_CARDS: Card[] = RAW_CARDS.map((c) => ({
+  ...c,
+  difficulty:
+    DIFFICULTY_OVERRIDES[c.id] ?? DIFFICULTY_BY_CATEGORY[c.category],
+}));
