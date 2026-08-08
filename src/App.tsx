@@ -8,9 +8,10 @@ import CategoryBar from './components/CategoryBar';
 import Login from './components/Login';
 import Onboarding from './components/Onboarding';
 import Ranking from './components/Ranking';
+import Listen from './components/Listen';
 import { useScreenTime } from './lib/screenTime';
 
-type View = 'today' | 'feed' | 'saved' | 'ranking';
+type View = 'today' | 'feed' | 'saved' | 'ranking' | 'listen';
 
 export default function App() {
   const [view, setView] = useState<View>('feed');
@@ -66,32 +67,33 @@ export default function App() {
               1 minute of Islamic knowledge, daily
             </p>
           </div>
-          <nav className="flex gap-1 rounded-full bg-white/10 p-1 text-xs font-semibold">
-            {(
-              [
-                ['today', 'Today'],
-                ['feed', 'Feed'],
-                ['saved', `Saved${saves.count ? ` (${saves.count})` : ''}`],
-                ['ranking', 'Ranking'],
-              ] as Array<[View, string]>
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setView(key)}
-                aria-pressed={view === key}
-                className={
-                  'rounded-full px-3 py-1.5 transition ' +
-                  (view === key
-                    ? 'bg-white text-emerald-900'
-                    : 'text-white/70 hover:text-white')
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
         </div>
+        <nav className="no-scrollbar mt-3 flex gap-1 overflow-x-auto rounded-full bg-white/10 p-1 text-xs font-semibold">
+          {(
+            [
+              ['today', 'Today'],
+              ['feed', 'Feed'],
+              ['saved', `Saved${saves.count ? ` (${saves.count})` : ''}`],
+              ['ranking', 'Ranking'],
+              ['listen', 'Listen'],
+            ] as Array<[View, string]>
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              aria-pressed={view === key}
+              className={
+                'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 transition ' +
+                (view === key
+                  ? 'bg-white text-emerald-900'
+                  : 'text-white/70 hover:text-white')
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
 
         {/* Category chips only relevant to the feed */}
         {view === 'feed' && (
@@ -129,6 +131,7 @@ export default function App() {
         )}
         {view === 'saved' && <SavedView />}
         {view === 'ranking' && <Ranking youMs={screenMs} />}
+        {view === 'listen' && <Listen cards={SEED_CARDS} />}
       </main>
     </div>
   );

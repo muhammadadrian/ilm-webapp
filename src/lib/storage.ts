@@ -71,6 +71,40 @@ export function usePersistentFlag(
   return [value, set];
 }
 
+/**
+ * Persists a single number to localStorage (e.g. a volume preference).
+ * Falls back to `fallback` when nothing is stored or parsing fails.
+ */
+export function usePersistentNumber(
+  key: string,
+  fallback: number
+): [number, (value: number) => void] {
+  const [value, setValue] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return fallback;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : fallback;
+    } catch {
+      return fallback;
+    }
+  });
+
+  const set = useCallback(
+    (next: number) => {
+      setValue(next);
+      try {
+        localStorage.setItem(key, String(next));
+      } catch {
+        /* ignore quota / privacy-mode errors */
+      }
+    },
+    [key]
+  );
+
+  return [value, set];
+}
+
 const DISMISS_KEY = 'ilm.banner.dismissed';
 
 export function useDismissible(key: string = DISMISS_KEY): {
