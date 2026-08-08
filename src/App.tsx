@@ -11,9 +11,10 @@ import Login from './components/Login';
 import Onboarding from './components/Onboarding';
 import Ranking from './components/Ranking';
 import Listen from './components/Listen';
+import Hadith from './components/Hadith';
 import { useScreenTime } from './lib/screenTime';
 
-type View = 'today' | 'feed' | 'saved' | 'ranking' | 'listen';
+type View = 'today' | 'feed' | 'saved' | 'ranking' | 'listen' | 'hadith';
 
 export default function App() {
   const [view, setView] = useState<View>('feed');
@@ -105,6 +106,7 @@ export default function App() {
             [
               ['today', 'Today'],
               ['feed', 'Feed'],
+              ['hadith', 'Hadith'],
               ['saved', `Saved${saves.count ? ` (${saves.count})` : ''}`],
               ['ranking', 'Ranking'],
               ['listen', 'Listen'],
@@ -172,7 +174,11 @@ export default function App() {
         )}
       </header>
 
-      {/* ── Persistent placeholder-content banner ── */}
+      {/* ── Persistent placeholder-content banner ──
+          Hidden for the Hadith section: that content is real, sourced from
+          sunnah.com (not placeholder demo cards), and carries its own
+          per-hadith "grading not verified" note instead. */}
+      {view !== 'hadith' && (
       <div className="flex shrink-0 items-center gap-2 bg-amber-100 px-4 py-2 text-[11px] leading-snug text-amber-900">
         <span aria-hidden className="self-start pt-px">
           ⚠
@@ -190,6 +196,7 @@ export default function App() {
           Verify Now
         </button>
       </div>
+      )}
 
       {/* ── Verification modal ── */}
       {verifyOpen && <VerifyModal onClose={() => setVerifyOpen(false)} />}
@@ -200,6 +207,7 @@ export default function App() {
         {view === 'feed' && (
           <FeedView key={`${active}-${activeTheme}-${q}`} />
         )}
+        {view === 'hadith' && <Hadith />}
         {view === 'saved' && <SavedView />}
         {view === 'ranking' && <Ranking youMs={screenMs} />}
         {view === 'listen' && <Listen cards={SEED_CARDS} />}
