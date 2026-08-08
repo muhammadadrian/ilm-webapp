@@ -13,10 +13,18 @@ import Onboarding from './components/Onboarding';
 import Ranking from './components/Ranking';
 import Listen from './components/Listen';
 import Hadith from './components/Hadith';
+import Profile from './components/Profile';
 import { useScreenTime } from './lib/screenTime';
 import { usePoints } from './lib/points';
 
-type View = 'today' | 'feed' | 'saved' | 'ranking' | 'listen' | 'hadith';
+type View =
+  | 'today'
+  | 'feed'
+  | 'saved'
+  | 'ranking'
+  | 'listen'
+  | 'hadith'
+  | 'profile';
 
 export default function App() {
   const [view, setView] = useState<View>('feed');
@@ -157,6 +165,7 @@ export default function App() {
               ['saved', `Saved${saves.count ? ` (${saves.count})` : ''}`],
               ['ranking', 'Ranking'],
               ['listen', 'Listen'],
+              ['profile', 'Profile'],
             ] as Array<[View, string]>
           ).map(([key, label]) => (
             <button
@@ -265,6 +274,7 @@ export default function App() {
         {view === 'saved' && <SavedView />}
         {view === 'ranking' && <Ranking youMs={screenMs} youPoints={points} />}
         {view === 'listen' && <Listen cards={SEED_CARDS} />}
+        {view === 'profile' && <Profile points={points} screenMs={screenMs} />}
       </main>
     </div>
   );

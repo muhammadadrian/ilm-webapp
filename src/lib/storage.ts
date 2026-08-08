@@ -105,6 +105,39 @@ export function usePersistentNumber(
   return [value, set];
 }
 
+/**
+ * Persists a single string to localStorage (e.g. a display name or bio).
+ * Falls back to `fallback` when nothing is stored or reading fails.
+ */
+export function usePersistentString(
+  key: string,
+  fallback = ''
+): [string, (value: string) => void] {
+  const [value, setValue] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : raw;
+    } catch {
+      return fallback;
+    }
+  });
+
+  const set = useCallback(
+    (next: string) => {
+      setValue(next);
+      try {
+        if (next === '') localStorage.removeItem(key);
+        else localStorage.setItem(key, next);
+      } catch {
+        /* ignore quota / privacy-mode errors */
+      }
+    },
+    [key]
+  );
+
+  return [value, set];
+}
+
 const DISMISS_KEY = 'ilm.banner.dismissed';
 
 export function useDismissible(key: string = DISMISS_KEY): {
